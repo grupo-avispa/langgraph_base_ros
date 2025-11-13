@@ -35,19 +35,18 @@ The agent operates as a ROS2 service:
 
 ```
 langgraph_base_ros/
-├── launch/
-│   └── langgraph.launch.py          # Launcher for LangGraph agent
-├── params/
-│   ├── default_params.yaml          # Default parameters
-│   └── langgraph_mcp.json          # MCP server configuration
-├── templates/
-│   ├── system_prompt.jinja         # System prompt template
-│   └── qwen3.jinja                 # Chat template for Qwen3
+├── test/
+│   └── test_langgraph.py          # Unit tests for the package
+├── resource/
+│   └── langgraph_base_ros           # Resource files for ROS2
 ├── langgraph_base_ros/
 │   ├── langgraph_base.py           # Base class for LangGraph workflows
 │   ├── langgraph_ros_base.py       # Base class for ROS2 integration
 │   ├── ollama_utils.py             # Ollama client utilities
 ├── package.xml
+├── requirements.txt
+├── README.md
+├── setup.cfg
 └── setup.py
 ```
 
@@ -128,6 +127,7 @@ Abstract base class for ROS2 integration. Handles ROS2 parameter management, Oll
 - Async Ollama agent initialization
 - MCP client configuration and tool retrieval
 - Abstract `agent_callback()` method for custom service handling
+- Abstract `build_graph()` method for workflow compilation based on the defined LangGraph workflow
 - Persistent asyncio event loop management
 
 **Usage**:

@@ -54,26 +54,19 @@ class LangGraphRosBase(Node):
         except Exception as e:
             self.get_logger().error(f'Failed to initialize Ollama agent: {e}')
             raise
+    @abstractmethod
+    def build_graph(self) -> None:
+        """
+        Initialize and compile the LangGraph workflow.
+        """
+        # Initialize and compile the LangGraph workflow using event loop
+        # try:
+        #     self.loop.run_until_complete(self.graph_workflow.make_graph())
+        # except Exception as e:
+        #     self.get_logger().error(f'Failed to create LangGraph workflow: {e}')
+        #     raise
 
-    # def build_graph(self, graph_manager) -> None:
-    #     """
-    #     Initialize and compile the LangGraph workflow.
-    #     Parameters:
-    #         graph_manager (LangGraphManager child class): The LangGraph manager instance to use.
-    #     Returns:
-    #         None
-    #     """
-    #     # Initialize LangGraph manager this manager varies based on the use case
-    #     self.graph_manager = graph_manager
-
-    #     # Initialize and compile the LangGraph workflow
-    #     try:
-    #         self.loop.run_until_complete(self.graph_manager.make_graph())
-    #     except Exception as e:
-    #         self.get_logger().error(f'Failed to create LangGraph workflow: {e}')
-    #         raise
-
-    #     self.get_logger().info('LangGraphManager graph created successfully...')
+        self.get_logger().info('LangGraphManager graph created successfully...')
 
     async def initialize_ollama_agent(self) -> None:
         """
