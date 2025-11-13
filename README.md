@@ -1,12 +1,10 @@
-# pisito_agent
+# langgraph_base_ros
 
 ROS2 package providing an intelligent conversational agent framework for robots using language models (LLMs) and tools via the Model Context Protocol (MCP).
 
 ## Overview
 
 This package offers a flexible framework for implementing conversational agents in ROS2 using LangGraph workflows and Ollama as the backend for running LLM models locally. The architecture is designed with extensibility in mind, allowing developers to create custom use cases by inheriting from base classes.
-
-The package includes a complete home assistant implementation as a reference use case, demonstrating how to build domain-specific agents on top of the provided base classes.
 
 ## Architecture
 
@@ -15,10 +13,6 @@ The package includes a complete home assistant implementation as a reference use
 - **Base Classes**: Abstract base classes for creating custom agents
   - `LangGraphBase`: Base class for LangGraph workflow management
   - `LangGraphRosBase`: Base class for ROS2 integration
-  
-- **Use Case Implementations**: Concrete implementations for specific scenarios
-  - `LangGraphManager`: Home assistant workflow implementation
-  - `RosHomeAssistantAgent`: Home assistant ROS2 node
 
 - **Utilities**:
   - `Ollama`: Client for Ollama LLM server with MCP integration
@@ -40,7 +34,7 @@ The agent operates as a ROS2 service:
 ### File Structure
 
 ```
-pisito_agent/
+langgraph_base_ros/
 ├── launch/
 │   └── langgraph.launch.py          # Launcher for LangGraph agent
 ├── params/
@@ -49,21 +43,17 @@ pisito_agent/
 ├── templates/
 │   ├── system_prompt.jinja         # System prompt template
 │   └── qwen3.jinja                 # Chat template for Qwen3
-├── pisito_agent/
+├── langgraph_base_ros/
 │   ├── langgraph_base.py           # Base class for LangGraph workflows
 │   ├── langgraph_ros_base.py       # Base class for ROS2 integration
-│   ├── langgraph_home_assistant.py # Home assistant workflow implementation
-│   ├── langgraph_ros_home_assistant_agent.py # Home assistant ROS2 node
 │   ├── ollama_utils.py             # Ollama client utilities
-│   └── fake_mcp_server.py          # Test MCP server
-├── .env                            # Environment variables (LangSmith)
 ├── package.xml
 └── setup.py
 ```
 
 ## Prerequisites
 
-### Option A: Native Installation
+### Installation
 
 1. **Ollama installed and running**:
    ```bash
@@ -105,21 +95,6 @@ pisito_agent/
    source install/setup.bash
    ```
 
-### Option B: Docker Installation
-
-Alternatively, you can run the agent using Docker, which includes all dependencies pre-configured.
-
-1. **Build Docker image**:
-   ```bash
-   cd ~/colcon_ws/src/interaction/pisito_agent/Docker
-   docker compose build
-   ```
-
-2. **Run with VSCode Dev Containers**:
-   - Open the `pisito_agent` folder in VSCode
-   - Reopen in container when prompted
-   - Use the integrated terminal to run the agent
-
 ## Base Classes
 
 ### LangGraphBase
@@ -134,7 +109,7 @@ Abstract base class for implementing LangGraph workflows. Provides common functi
 
 **Usage**:
 ```python
-from pisito_agent.langgraph_base import LangGraphBase
+from langgraph_base_ros.langgraph_base import LangGraphBase
 
 class CustomWorkflow(LangGraphBase):
     async def make_graph(self):
@@ -157,7 +132,7 @@ Abstract base class for ROS2 integration. Handles ROS2 parameter management, Oll
 
 **Usage**:
 ```python
-from pisito_agent.langgraph_ros_base import LangGraphRosBase
+from langgraph_base_ros.langgraph_ros_base import LangGraphRosBase
 
 class CustomRosAgent(LangGraphRosBase):
     def __init__(self):
@@ -181,7 +156,7 @@ class CustomRosAgent(LangGraphRosBase):
 Create a class inheriting from `LangGraphBase`:
 
 ```python
-from pisito_agent.langgraph_base import LangGraphBase
+from langgraph_base_ros.langgraph_base import LangGraphBase
 from langgraph.graph import START, StateGraph, END
 
 class MyCustomWorkflow(LangGraphBase):
@@ -215,7 +190,8 @@ class MyCustomWorkflow(LangGraphBase):
 Create a class inheriting from `LangGraphRosBase`:
 
 ```python
-from pisito_agent.langgraph_ros_base import LangGraphRosBase
+from langgraph_base_ros.langgraph_ros_base import LangGraphRosBase
+from your_workflow_module import MyCustomWorkflow
 from your_msgs.srv import YourServiceType
 
 class MyCustomAgent(LangGraphRosBase):
@@ -228,7 +204,8 @@ class MyCustomAgent(LangGraphRosBase):
             ollama_agent=self.ollama_agent,
             max_steps=self.max_steps
         )
-        self.build_graph(self.graph_manager)
+
+        self.build_graph()
         
         # Create your service
         self.srv = self.create_service(
@@ -244,158 +221,15 @@ class MyCustomAgent(LangGraphRosBase):
         )
         response.field = result['messages'][-1]['content']
         return response
-```
+    def build_graph(self) -> None:
+        # Initialize and compile the LangGraph workflow
+        try:
+            self.loop.run_until_complete(self.graph_manager.make_graph())
+        except Exception as e:
+            self.get_logger().error(f'Failed to create LangGraph workflow: {e}')
+            raise
 
-### Step 3: Create Launch File
-
-```python
-from launch import LaunchDescription
-from launch_ros.actions import Node
-
-def generate_launch_description():
-    return LaunchDescription([
-        Node(
-            package='pisito_agent',
-            executable='your_custom_agent_executable',
-            name='your_agent_node',
-            parameters=[your_params_file]
-        )
-    ])
-```
-
-## Home Assistant Use Case (Reference Implementation)
-
-### Key Features
-
-- **LangGraph Workflow**: State and conversation flow management via graphs
-- **Ollama Backend**: Local execution of optimized LLM models
-- **Raw Mode**: Direct control over message format using custom templates
-- **Chat Templates**: Support for custom Jinja2 templates
-- **Async Operations**: Asynchronous processing for better performance
-- **MCP Integration**: External tool execution via Model Context Protocol
-
-### Configuration Parameters
-
-File: `params/default_params.yaml`
-
-```yaml
-langgraph_agent_node:
-  ros__parameters:
-    # Service configuration
-    service_name: "agent_service"
-    
-    # Configuration files
-    mcp_servers: "langgraph_mcp.json"
-    system_prompt_file: "system_prompt.jinja"
-    model_chat_template_file: "qwen3.jinja"
-    
-    # LLM Model
-    llm_model: "qwen3:0.6b"
-    
-    # Tool call extraction
-    tool_call_pattern: "<tool_call>(.*?)</tool_call>"
-    
-    # Ollama generation parameters
-    raw_mode: true
-    debug_mode: false
-    temperature: 0.0
-    repeat_penalty: 1.1
-    top_k: 10
-    top_p: 1.0
-    num_ctx: 8192
-    num_predict: 128
-    
-    # LangGraph workflow parameters
-    max_steps: 5
-    enable_thinking: false
-```
-
-### MCP Configuration
-
-File: `params/langgraph_mcp.json` defines MCP servers to connect to:
-
-```json
-{
-    "mcpServers": {
-        "server_name": {
-            "url": "http://localhost:3002/mcp"
-        }
-    }
-}
-```
-
-### Running the Home Assistant
-
-```bash
-# Activate virtual environment
-source agent-venv/bin/activate
-
-# Launch agent with default configuration
-ros2 launch pisito_agent langgraph.launch.py
-
-# Test the agent
-ros2 service call /agent_service llm_interactions_msgs/srv/UserQueryResponse "{user_query: 'Turn on the living room lights', user_name: 'John'}"
-```
-
-## Customization
-
-### System Prompts
-
-Edit `templates/system_prompt.jinja` to change agent behavior:
-
-```jinja
-You are a helpful assistant specialized in [your domain].
-You can use the following tools: [list tools]
-Always respond politely and concisely.
-```
-
-### Chat Templates
-
-Add custom model templates to `/templates` folder. The template must be compatible with the Jinja2 format expected by your model.
-
-### Adding New Tools
-
-Tools are automatically retrieved from the MCP server:
-
-1. Implement the tool on your MCP server
-2. Restart the MCP server
-3. Relaunch the ROS2 agent
-
-The agent will automatically discover and use the new tools.
-
-## Development
-
-### Testing with Fake MCP Server
-
-For development and testing, use the provided fake MCP server:
-
-```bash
-python pisito_agent/fake_mcp_server.py
-```
-
-This server provides mock home automation tools for testing agent interactions.
-
-### Modifying Agent Flow
-
-Edit your workflow class (e.g., `langgraph_home_assistant.py`) to change the graph structure:
-
-- Add new nodes for additional processing steps
-- Modify conditional edges to change decision logic
-- Adjust max_steps and other parameters in the configuration
-
-### Debugging
-
-Enable debug mode in parameters to see detailed LLM interactions:
-
-```yaml
-debug_mode: true
-```
-
-Enable LangSmith tracing by setting environment variables in `.env`:
-
-```bash
-LANGSMITH_TRACING=true
-LANGSMITH_PROJECT=your_project_name
+        self.get_logger().info('MyCustomWorkflow graph created successfully...')
 ```
 
 ## License
