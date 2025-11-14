@@ -114,8 +114,8 @@ class LangGraphRosBase(Node):
             self.get_logger().info(f'Loading system prompt from: {self.system_prompt_file}')
             with open(self.system_prompt_file, 'r') as f:
                 self.system_prompt = f.read()
-        except FileNotFoundError:
-            self.get_logger().error(f'System prompt file not found: {self.system_prompt_file}')
+        except Exception as e:
+            self.get_logger().error(f'System prompt could not be loaded from {self.system_prompt_file}: {e}')
             self.system_prompt = "You are a helpful assistant."
             self.get_logger().error(f'System prompt set to default: {self.system_prompt}')
         
