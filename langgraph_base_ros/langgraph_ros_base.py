@@ -65,6 +65,7 @@ class LangGraphRosBase(Node):
         # except Exception as e:
         #     self.get_logger().error(f'Failed to create LangGraph workflow: {e}')
         #     raise
+        # -- to be implemented in child classes --
 
         self.get_logger().info('LangGraphManager graph created successfully...')
 
@@ -76,6 +77,7 @@ class LangGraphRosBase(Node):
             None
         """
         # Initialize MCP client
+        mcp_servers_config = {}
         try:
             self.get_logger().info(f'Loading MCP servers from: {self.mcp_servers}')
             with open(self.mcp_servers, 'r') as f:
@@ -83,17 +85,14 @@ class LangGraphRosBase(Node):
             self.get_logger().info(f'MCP servers config: {mcp_servers_config}')
         except FileNotFoundError:
             self.get_logger().error(f'MCP servers file not found: {self.mcp_servers}')
-            raise
         except json.JSONDecodeError as e:
             self.get_logger().error(f'Invalid JSON in MCP servers file: {e}')
-            raise
-        
-        self.mcp_client = Client(mcp_servers_config)
         
         # Retrieve available tools from MCP
         self.get_logger().info('Retrieving tools from MCP servers...')
         try:
             self.tools = []
+            self.mcp_client = Client(mcp_servers_config)
             async with self.mcp_client:
                 mcp_tools = await self.mcp_client.list_tools()
                 # Prepare tool definitions for Ollama agent
@@ -105,6 +104,8 @@ class LangGraphRosBase(Node):
                     })
         except Exception as e:
             self.get_logger().error(f'Error retrieving tools from MCP: {e}')
+            self.mcp_client = None
+            self.tools = []
         
         self.get_logger().info(f'Retrieved {len(self.tools)} tools from MCP servers')
         
@@ -115,7 +116,8 @@ class LangGraphRosBase(Node):
                 self.system_prompt = f.read()
         except FileNotFoundError:
             self.get_logger().error(f'System prompt file not found: {self.system_prompt_file}')
-            raise
+            self.system_prompt = "You are a helpful assistant."
+            self.get_logger().error(f'System prompt set to default: {self.system_prompt}')
         
         # Initialize Ollama agent with retrieved tools and parameters
         self.get_logger().info(f'Initializing Ollama agent with model: {self.llm_model}')
