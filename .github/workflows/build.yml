@@ -21,6 +21,12 @@ jobs:
         with:
           required-ros-distributions: jazzy
 
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install -r langgraph_base_ros/requirements.txt
+
+
       - name: Install dependencies and build
         uses: ros-tooling/action-ros-ci@v0.3
         with:
