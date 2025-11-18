@@ -77,6 +77,11 @@ langgraph_base_ros/
    source agent-venv/bin/activate
    pip install -r requirements.txt
    ```
+   ```bash
+   cd uv
+   uv sync
+   source .venv/bin/activate
+   ```
 
 4. **Environment variables** (optional, for LangSmith tracing):
    Edit the `.env` file in the package:
