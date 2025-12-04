@@ -89,21 +89,10 @@ class LangGraphRosBase(Node):
         # Retrieve available tools from MCP
         self.get_logger().info('Retrieving tools from MCP servers...')
         try:
-            self.tools = []
             self.mcp_client = Client(mcp_servers_config)
-            async with self.mcp_client:
-                mcp_tools = await self.mcp_client.list_tools()
-                # Prepare tool definitions for Ollama agent
-                for tool in mcp_tools:
-                    self.tools.append({
-                        'name': tool.name,
-                        'description': tool.description,
-                        'inputSchema': tool.inputSchema,
-                    })
         except Exception as e:
-            self.get_logger().error(f'Error retrieving tools from MCP: {e}')
+            self.get_logger().error(f'Error initializing MCP client: {e}')
             self.mcp_client = None  # type: ignore[assignment]
-            self.tools = []
 
         self.get_logger().info(f'Retrieved {len(self.tools)} tools from MCP servers')
 
@@ -122,7 +111,6 @@ class LangGraphRosBase(Node):
         self.get_logger().info(f'Initializing Ollama agent with model: {self.llm_model}')
         self.ollama_agent = Ollama(
             model=self.llm_model,
-            tools=self.tools,
             tool_call_pattern=self.tool_call_pattern,
             mcp_client=self.mcp_client,
             think=self.enable_thinking,
