@@ -7,7 +7,6 @@ from fastmcp import Client
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-import asyncio
 
 console = Console()
 
@@ -129,7 +128,11 @@ class Ollama:
         Initializes tool list with langchain tools received as class parameter.
         If the mcp client object is not None tries to asynchronously retrieve the 
         list of tools from the MCP server and update the tools attribute.
-
+        The LangChain tools must be provided as a list of dictionaries with the following keys:
+        - name: (str) the tool name
+        - description : (str) the tool description
+        - inputSchema : (dict) the tool input schema
+        - tool_object : (object) the langchain tool object with an invoke method.
         Parameters
         ----------
         lang_tools : list
