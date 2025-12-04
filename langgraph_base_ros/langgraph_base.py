@@ -1,10 +1,9 @@
-"""
-LangGraph base class for conversational AI.
-"""
+"""LangGraph base class for conversational AI."""
 
 import logging
 from abc import ABC, abstractmethod
 from langgraph_base_ros.ollama_utils import Ollama
+
 
 class LangGraphBase(ABC):
     """
@@ -24,10 +23,11 @@ class LangGraphBase(ABC):
             Initializes and compiles the LangGraph workflow.
     """
 
-    def __init__(self,
-                 logger=None,
-                 ollama_agent: Ollama = None,
-                 max_steps: int = 5):
+    def __init__(
+            self,
+            logger=None,
+            ollama_agent: Ollama | None = None,
+            max_steps: int = 5) -> None:
         """
         Initialize the LangGraph Manager.
 
@@ -46,7 +46,7 @@ class LangGraphBase(ABC):
         self.messages_count = 0
         self.max_steps = max_steps
         if self.ollama_agent is None:
-            raise ValueError("Ollama agent instance must be provided to LangGraphManager.")
+            raise ValueError('Ollama agent instance must be provided to LangGraphManager.')
 
     def _log(self, msg: str) -> None:
         """
