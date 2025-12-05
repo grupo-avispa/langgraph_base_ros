@@ -170,7 +170,7 @@ class Ollama:
                         'inputSchema': tool.inputSchema,
                     })
         else:
-            console.print('[red]MCP client is not initialized. Cannot retrieve tools[/red]')
+            console.print('[yellow]MCP client is not initialized. Cannot retrieve tools[/yellow]')
 
     def create_message(
             self,
