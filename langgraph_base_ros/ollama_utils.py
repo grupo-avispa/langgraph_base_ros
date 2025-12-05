@@ -159,7 +159,7 @@ class Ollama:
                     'inputSchema': tool['inputSchema'],
                 })
             except AttributeError as e:
-                console.print(f'[red]Error retrieving langchain tool attributes: {e}[/red]')
+                console.print(f'[yellow]Error retrieving langchain tool attributes: {e}[/yellow]')
         if self.mcp_client is not None:
             async with self.mcp_client:
                 tools = await self.mcp_client.list_tools()
@@ -233,7 +233,7 @@ class Ollama:
                 try:
                     action = json.loads(parsed_response)
                 except json.JSONDecodeError as e:
-                    console.print(f'[red]JSON decode error while parsing tool call: {e}[/red]')
+                    console.print(f'[yellow]JSON decode error while parsing tool call: {e}[/yellow]')
                     continue
                 # Extract tool name and parameters
                 try:
@@ -247,7 +247,7 @@ class Ollama:
                     })
                     all_actions.append(action)
                 except KeyError as e:
-                    console.print(f'[red]Error parsing tool call: {e}[/red]')
+                    console.print(f'[yellow]Error parsing tool call: {e}[/yellow]')
                     continue
             # Check if any tool calls were successfully parsed
             if tool_calls_list:
