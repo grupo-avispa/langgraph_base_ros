@@ -87,14 +87,12 @@ class LangGraphRosBase(Node):
             self.get_logger().error(f'Invalid JSON in MCP servers file: {e}')
 
         # Retrieve available tools from MCP
-        self.get_logger().info('Retrieving tools from MCP servers...')
+        self.get_logger().info('Initializing MCP client...')
         try:
             self.mcp_client = Client(mcp_servers_config)
         except Exception as e:
             self.get_logger().error(f'Error initializing MCP client: {e}')
             self.mcp_client = None  # type: ignore[assignment]
-
-        self.get_logger().info(f'Retrieved {len(self.tools)} tools from MCP servers')
 
         # Get system prompt template content
         try:
