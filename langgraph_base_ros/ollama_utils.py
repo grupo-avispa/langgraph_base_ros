@@ -1,7 +1,7 @@
 import json
 import re
-from typing import TypedDict, NotRequired
-from ollama import generate
+from typing import TypedDict, NotRequired, Optional
+from ollama import generate, chat, Message
 from jinja2 import Template
 from fastmcp import Client
 from rich.console import Console
@@ -9,23 +9,58 @@ from rich.panel import Panel
 
 console = Console()
 
+# class Message(SubscriptableBaseModel):
+#   """
+#   Chat message.
+#   """
 
-class Message(TypedDict):
-    """
-    This class contains all the message fields required to render model prompt templates.
+#   role: str
+#   "Assumed role of the message. Response messages has role 'assistant' or 'tool'."
 
-    Attributes:
-        role (str): The role of the message (system, user, assistant, tool)
-        content (str): The content of the message
-        reasoning_content (str): The reasoning content of the message (for thinking models)
-        tool_calls (list): The tool calls associated with the message
-    """
+#   content: Optional[str] = None
+#   'Content of the message. Response messages contains message fragments when streaming.'
 
-    role: str
-    content: NotRequired[str]
-    reasoning_content: NotRequired[str]
-    tool_calls: NotRequired[list]
+#   thinking: Optional[str] = None
+#   'Thinking content. Only present when thinking is enabled.'
 
+#   images: Optional[Sequence[Image]] = None
+#   """
+#   Optional list of image data for multimodal models.
+
+#   Valid input types are:
+
+#   - `str` or path-like object: path to image file
+#   - `bytes` or bytes-like object: raw image data
+
+#   Valid image formats depend on the model. See the model card for more information.
+#   """
+
+#   tool_name: Optional[str] = None
+#   'Name of the executed tool.'
+
+#   class ToolCall(SubscriptableBaseModel):
+#     """
+#     Model tool calls.
+#     """
+
+#     class Function(SubscriptableBaseModel):
+#       """
+#       Tool call function.
+#       """
+
+#       name: str
+#       'Name of the function.'
+
+#       arguments: Mapping[str, Any]
+#       'Arguments of the function.'
+
+#     function: Function
+#     'Function to be called.'
+
+#   tool_calls: Optional[Sequence[ToolCall]] = None
+#   """
+#   Tools calls to be made by the model.
+#   """
 
 class Messages(TypedDict):
     """
@@ -56,7 +91,7 @@ class Ollama:
                  top_k: int = 10,
                  top_p: float = 0.25,
                  num_ctx: int = 8192,
-                 num_predict: int = 256,
+                 num_predict: int = 1024,
                  jinja_template_path: str = '',
                  system_prompt: str = 'You are a helpful assistant.',
                  debug: bool = False):
@@ -153,21 +188,29 @@ class Ollama:
         self.tools = []
         for tool in self.lang_tools:
             try:
+                if not all (k in tool for k in ("name", "description", "inputSchema", "tool_object")):
+                    raise KeyError("One or more required keys are missing in the langchain tool dictionary.")
                 self.tools.append({
-                    'name': tool['name'],
-                    'description': tool['description'],
-                    'inputSchema': tool['inputSchema'],
+                    'type': 'function',
+                    'function': {
+                        'name': tool["name"],
+                        'description': tool["description"],
+                        'parameters': tool["inputSchema"]
+                    }
                 })
-            except AttributeError as e:
+            except Exception as e:
                 console.print(f'[yellow]Error retrieving langchain tool attributes: {e}[/yellow]')
         if self.mcp_client is not None:
             async with self.mcp_client:
                 tools = await self.mcp_client.list_tools()
                 for tool in tools:
                     self.tools.append({
-                        'name': tool.name,
-                        'description': tool.description,
-                        'inputSchema': tool.inputSchema,
+                        'type': 'function',
+                        'function': {
+                            'name': tool.name,
+                            'description': tool.description,
+                            'parameters': tool.inputSchema
+                        }
                     })
         else:
             console.print('[yellow]MCP client is not initialized. Cannot retrieve tools[/yellow]')
@@ -175,39 +218,47 @@ class Ollama:
     def create_message(
             self,
             role: str,
-            content: str = '',
-            reasoning_content: str = '',
-            tool_calls: list | None = None
+            content: Optional[str] = None,
+            thinking: Optional[str] = None,
+            tool_calls: list | None = None,
+            tool_name: Optional[str] = None
     ) -> Message:
         """
-        Create a message object.
+        Create a message object using Ollama's native Message class.
+        Only assigns optional attributes when they are provided and not None.
 
         Parameters
         ----------
         role : str
             The role of the message (system, user, assistant, tool)
-        content : str
+        content : str, optional
             The content of the message
-        reasoning_content : str
-            The reasoning content of the message (for thinking models)
-        tool_calls : list
+        thinking : str, optional
+            The thinking content of the message (for thinking models)
+        tool_calls : list, optional
             The tool calls associated with the message
+        tool_name : str, optional
+            Name of the executed tool (for tool role messages)
 
         Returns
         -------
         Message
-            The created message dictionary
+            The created message object with only the provided attributes
         """
-        if tool_calls is None:
-            tool_calls = []
-
-        msg: Message = {
-            'role': role,
-            'content': content,
-            'reasoning_content': reasoning_content,
-            'tool_calls': tool_calls
-        }
-        return msg
+        # Create base message with only role
+        kwargs = {'role': role}
+        
+        # Add optional attributes only if provided
+        if content is not None:
+            kwargs['content'] = content
+        if thinking is not None:
+            kwargs['thinking'] = thinking
+        if tool_calls is not None:
+            kwargs['tool_calls'] = tool_calls
+        if tool_name is not None:
+            kwargs['tool_name'] = tool_name
+        
+        return Message(**kwargs)
 
     def parse_tool_calls(self, response: str):
         """
@@ -270,15 +321,15 @@ class Ollama:
                 content=response))
             raise ValueError('No tool call found in the model response.')
 
-    async def invoke(self, user_query: str = '', state: Messages | None = None) -> Messages:
+    async def invoke(self, state: Messages = None) -> Messages:
         """
         Send the request to the ollama server and return the response.
 
         The state messages are updated with the new response.
 
         Parameters
-        user_query : str
-            the user query to send to the model. If empty, the last user message in state is used.
+        state : Messages
+            List of message objects in the conversation history.
         state : Messages
             Optional Messages object containing conversation history.
             If provided, replaces current state.
@@ -292,21 +343,11 @@ class Ollama:
 
         # Check if any of the message roles is 'user' if no user_query is provided
         has_user_message = any(
-            (msg['role'] == 'user' and msg.get('content', ''))
+            (msg.role == 'user' and msg.content is not None)
             for msg in self.state['messages'])
-        if not user_query and not has_user_message:
+        if not has_user_message:
             raise ValueError(
-                'If no user query is provided, the state must contain at least one user message.')
-        elif not has_user_message and user_query:
-            # Add user message to conversation memory
-            self.state['messages'].append(self.create_message(
-                role='user',
-                content=user_query)
-            )
-        elif has_user_message and user_query:
-            console.print(
-                '[yellow]Warning: Both user_query and user message in state provided. '
-                'Ignoring user_query.[/yellow]')
+                'The state must contain at least one user message.')
 
         # Prepare the prompt
         if self.raw:
@@ -340,28 +381,31 @@ class Ollama:
                     expand=False
                 ))
         else:
-            response = generate(
+            response = chat(
                 model=self.model,
-                prompt=self.state['messages'][-1]['content'],
                 stream=False,
-                raw=self.raw,
-                system=self.system_prompt,
-                options=self.options
+                messages=self.state['messages'],
+                think=self.think,
+                tools=self.tools,
+                options=self.options,
             )
         # Check if tool calls are present in the response
         try:
-            # Parse tool calls from the response and iterate over them
-            tool_calls = self.parse_tool_calls(response['response'])
+            if self.raw:
+                # Parse tool calls from the response and iterate over them
+                tool_calls = self.parse_tool_calls(response['response'])
+            else:
+                tool_calls = response.message.tool_calls
             print(f'Parsed tool calls: {tool_calls}')
             for tool_call in tool_calls:
                 tool_call_done = False
                 # First check if the tool is a langchain tool
                 if self.lang_tools is not None:
                     for lang_tool in self.lang_tools:
-                        if lang_tool['name'] == tool_call['tool_name']:
+                        if lang_tool['name'] == tool_call.function.name:
                             # Call the langchain tool
                             tool_response = lang_tool['tool_object'].invoke(
-                                tool_call['tool_arguments']
+                                tool_call.function.arguments
                             )
                             tool_call_done = True
                             break
@@ -369,8 +413,8 @@ class Ollama:
                 if not tool_call_done and self.mcp_client is not None:
                     async with self.mcp_client:
                         tool_response = await self.mcp_client.call_tool(
-                            tool_call['tool_name'],
-                            tool_call['tool_arguments']
+                            tool_call.function.name,
+                            arguments=tool_call.function.arguments
                         )
                         tool_call_done = True
                 # If tool call was successful, add the response to the conversation memory
