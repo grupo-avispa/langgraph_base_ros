@@ -140,6 +140,7 @@ class Ollama:
             'num_predict': num_predict
         }
         self.debug = debug
+        self.tools = []
 
         # Initialize MCP client if provided, else None
         self.mcp_client = mcp_client
@@ -185,7 +186,6 @@ class Ollama:
         None
         """
         self.lang_tools = lang_tools
-        self.tools = []
         for tool in self.lang_tools:
             try:
                 if not all (k in tool for k in ("name", "description", "inputSchema", "tool_object")):
@@ -262,21 +262,24 @@ class Ollama:
 
     def parse_tool_calls(self, response: str):
         """
-        Parse tool calls from the model response.
+        Parse tool calls from the model response (for raw mode).
+        Returns a list of Message.ToolCall objects matching Ollama's structure.
 
         Parameters
+        ----------
         response : str
             the response from the model
 
         Returns
-        tool_calls : list
-            the list of parsed tool calls
+        -------
+        tool_calls : Sequence[Message.ToolCall] | None
+            the list of parsed tool calls in Ollama's format
         """
         # Look for tool call patterns in the response
         tool_call_matches = re.findall(self.tool_call_pattern, response, re.DOTALL)
         if tool_call_matches:
             tool_calls_list = []
-            all_actions = []
+            
             # Iterate over all matches
             for match in tool_call_matches:
                 parsed_response = match.strip()
@@ -286,39 +289,52 @@ class Ollama:
                 except json.JSONDecodeError as e:
                     console.print(f'[yellow]JSON decode error while parsing tool call: {e}[/yellow]')
                     continue
+                
                 # Extract tool name and parameters
                 try:
                     tool_name = action['name']
                     tool_arguments = action['arguments']
-                    # Append the tool call to the list
-                    tool_calls_list.append({
-                        'tool_name': tool_name,
-                        'tool_arguments': tool_arguments,
-                        'raw': parsed_response
-                    })
-                    all_actions.append(action)
+                    
+                    # Create ToolCall object matching Ollama's structure
+                    tool_call = Message.ToolCall(
+                        function=Message.ToolCall.Function(
+                            name=tool_name,
+                            arguments=tool_arguments
+                        )
+                    )
+                    tool_calls_list.append(tool_call)
+                    
                 except KeyError as e:
                     console.print(f'[yellow]Error parsing tool call: {e}[/yellow]')
                     continue
+            
             # Check if any tool calls were successfully parsed
             if tool_calls_list:
                 # Append the tool calls to the conversation memory
-                self.state['messages'].append(self.create_message(
-                    role='assistant',
-                    tool_calls=all_actions)
+                self.messages.append(
+                    Message(
+                        role='assistant',
+                        tool_calls=tool_calls_list
+                    )
                 )
                 return tool_calls_list
             else:
                 # Append the response without tool call to the conversation memory
-                self.state['messages'].append(self.create_message(
-                    role='assistant',
-                    content=response))
+                self.messages.append(
+                    Message(
+                        role='assistant',
+                        content=response
+                    )
+                )
                 raise ValueError('Found tool call tags but failed to parse them.')
         else:
             # Append the response without tool call to the conversation memory
-            self.state['messages'].append(self.create_message(
-                role='assistant',
-                content=response))
+            self.messages.append(
+                Message(
+                    role='assistant',
+                    content=response
+                )
+            )
             raise ValueError('No tool call found in the model response.')
 
     async def invoke(self, state: Messages = None) -> Messages:
@@ -330,9 +346,6 @@ class Ollama:
         Parameters
         state : Messages
             List of message objects in the conversation history.
-        state : Messages
-            Optional Messages object containing conversation history.
-            If provided, replaces current state.
 
         Returns
         Messages : the updated state with new messages.
@@ -392,15 +405,38 @@ class Ollama:
         # Check if tool calls are present in the response
         try:
             if self.raw:
-                # Parse tool calls from the response and iterate over them
+                # Parse tool calls from the response (returns Sequence[Message.ToolCall])
                 tool_calls = self.parse_tool_calls(response['response'])
             else:
-                tool_calls = response.message.tool_calls
-            print(f'Parsed tool calls: {tool_calls}')
+                # Add the assistant message with tool calls to messages
+                # Only include attributes that are present in the response
+                msg_kwargs = {'role': 'assistant'}
+                
+                if hasattr(response.message, 'content') and response.message.content is not None:
+                    msg_kwargs['content'] = response.message.content
+                if hasattr(response.message, 'thinking') and response.message.thinking is not None:
+                    msg_kwargs['thinking'] = response.message.thinking
+                if hasattr(response.message, 'tool_calls') and response.message.tool_calls is not None:
+                    msg_kwargs['tool_calls'] = response.message.tool_calls
+                
+                self.state["messages"].append(Message(**msg_kwargs))
+                tool_calls = response.message.tool_calls if hasattr(response.message, 'tool_calls') else None
+            
+            if not tool_calls:
+                return self.state
+            
+            if self.debug:
+                console.print(f'[cyan]Tool calls to execute: {len(tool_calls)}[/cyan]')
+
             for tool_call in tool_calls:
+                if self.debug:
+                    console.print(f'[cyan]Executing tool: {tool_call.function.name}[/cyan]')
+                    console.print(f'[cyan]Arguments: {tool_call.function.arguments}[/cyan]')
+
                 tool_call_done = False
+
                 # First check if the tool is a langchain tool
-                if self.lang_tools is not None:
+                if self.lang_tools:
                     for lang_tool in self.lang_tools:
                         if lang_tool['name'] == tool_call.function.name:
                             # Call the langchain tool
@@ -412,6 +448,7 @@ class Ollama:
                 # If not found, check if MCP client is available to call the tool
                 if not tool_call_done and self.mcp_client is not None:
                     async with self.mcp_client:
+                        # Call MCP tool with name and arguments from tool_call.function
                         tool_response = await self.mcp_client.call_tool(
                             tool_call.function.name,
                             arguments=tool_call.function.arguments
@@ -422,18 +459,32 @@ class Ollama:
                     if self.debug:
                         console.print(Panel(
                             str(tool_response),
-                            title='[green bold]TOOL RESPONSE[/green bold]',
+                            title=f'[green bold]TOOL RESPONSE: {tool_call.function.name}[/green bold]',
                             border_style='green',
                             expand=False
                         ))
                     # Add observation to conversation memory
                     content = tool_response.content[0].text \
                         if hasattr(tool_response, 'content') else str(tool_response)
-                    self.state['messages'].append(self.create_message(
-                        role='tool',
-                        content=content)
+                    self.state['messages'].append(
+                        Message(
+                            role='tool',
+                            content=content
+                        )
                     )
-        except ValueError:
+                else:
+                    if self.debug:
+                        console.print(f'[red]Tool {tool_call.function.name} not found or failed to execute[/red]')
+                    self.state['messages'].append(
+                        Message(
+                            role='tool',
+                            content=f"Tool {tool_call.function.name} not found or failed to execute"
+                        )
+                    )
+        except (ValueError, AttributeError) as e:
+            # No tool calls or error parsing them
+            if self.debug:
+                console.print(f'[yellow]No tool calls or error: {e}[/yellow]')
             pass
         return self.state
 
