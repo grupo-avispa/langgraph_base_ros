@@ -311,7 +311,7 @@ class Ollama:
             # Check if any tool calls were successfully parsed
             if tool_calls_list:
                 # Append the tool calls to the conversation memory
-                self.messages.append(
+                self.state["messages"].append(
                     Message(
                         role='assistant',
                         tool_calls=tool_calls_list
@@ -320,7 +320,7 @@ class Ollama:
                 return tool_calls_list
             else:
                 # Append the response without tool call to the conversation memory
-                self.messages.append(
+                self.state["messages"].append(
                     Message(
                         role='assistant',
                         content=response
@@ -329,7 +329,7 @@ class Ollama:
                 raise ValueError('Found tool call tags but failed to parse them.')
         else:
             # Append the response without tool call to the conversation memory
-            self.messages.append(
+            self.state["messages"].append(
                 Message(
                     role='assistant',
                     content=response
@@ -371,13 +371,13 @@ class Ollama:
                 enable_thinking=self.think
             )
 
-            # Uncomment to see rendered prompt
-            console.print(Panel(
-                prompt,
-                title='[cyan bold]RENDERED PROMPT[/cyan bold]',
-                border_style='cyan',
-                expand=False
-            ))
+            if self.debug:
+                console.print(Panel(
+                    prompt,
+                    title='[cyan bold]RENDERED PROMPT[/cyan bold]',
+                    border_style='cyan',
+                    expand=False
+                ))
 
             response = generate(
                 model=self.model,
