@@ -1,77 +1,15 @@
 import json
 import re
-from typing import TypedDict, NotRequired, Optional
+from typing import Optional
 from ollama import generate, chat, Message
-from jinja2 import Template
 from fastmcp import Client
 from rich.console import Console
+from rich.text import Text
 from rich.panel import Panel
 
+from chat_template_render import TemplateRenderer, Messages
+
 console = Console()
-
-# class Message(SubscriptableBaseModel):
-#   """
-#   Chat message.
-#   """
-
-#   role: str
-#   "Assumed role of the message. Response messages has role 'assistant' or 'tool'."
-
-#   content: Optional[str] = None
-#   'Content of the message. Response messages contains message fragments when streaming.'
-
-#   thinking: Optional[str] = None
-#   'Thinking content. Only present when thinking is enabled.'
-
-#   images: Optional[Sequence[Image]] = None
-#   """
-#   Optional list of image data for multimodal models.
-
-#   Valid input types are:
-
-#   - `str` or path-like object: path to image file
-#   - `bytes` or bytes-like object: raw image data
-
-#   Valid image formats depend on the model. See the model card for more information.
-#   """
-
-#   tool_name: Optional[str] = None
-#   'Name of the executed tool.'
-
-#   class ToolCall(SubscriptableBaseModel):
-#     """
-#     Model tool calls.
-#     """
-
-#     class Function(SubscriptableBaseModel):
-#       """
-#       Tool call function.
-#       """
-
-#       name: str
-#       'Name of the function.'
-
-#       arguments: Mapping[str, Any]
-#       'Arguments of the function.'
-
-#     function: Function
-#     'Function to be called.'
-
-#   tool_calls: Optional[Sequence[ToolCall]] = None
-#   """
-#   Tools calls to be made by the model.
-#   """
-
-class Messages(TypedDict):
-    """
-    Class to hold conversation messages for LangGraph workflow.
-
-    Attributes:
-        messages (list[Message]): List of message objects in the conversation.
-    """
-
-    messages: list[Message]
-
 
 class Ollama:
     """
@@ -82,7 +20,8 @@ class Ollama:
 
     def __init__(self,
                  model: str = 'qwen3:0.6b',
-                 tool_call_pattern: str = '<tool_call>(.*?)</tool_call>',
+                 tool_call_pattern: str = '',
+                 template_type: str = '',
                  mcp_client: Client | None = None,
                  think: bool = False,
                  raw: bool = False,
@@ -92,8 +31,6 @@ class Ollama:
                  top_p: float = 0.25,
                  num_ctx: int = 8192,
                  num_predict: int = 1024,
-                 jinja_template_path: str = '',
-                 system_prompt: str = 'You are a helpful assistant.',
                  debug: bool = False):
         """
         Initialize the Ollama class.
@@ -118,10 +55,8 @@ class Ollama:
         raw         :   bool
             if true no formatting will be applied to the prompt. You may choose to use the raw
             parameter if you are specifying a full templated prompt in your request to the API
-        jinja_template_path : str
-            the jinja template file path to use for prompt formatting.
-        system_prompt : str
-            the system prompt to use.
+        render :   TemplateRenderer
+            the template renderer object to format prompts in raw mode.
         options     :   dict
             a dictionary of options to configure model inference.
         """
@@ -130,7 +65,6 @@ class Ollama:
         self.tool_call_pattern = tool_call_pattern
         self.think = think
         self.raw = raw
-        self.system_prompt = system_prompt
         self.options = {
             'temperature': temperature,
             'repeat_penalty': repeat_penalty,
@@ -141,29 +75,26 @@ class Ollama:
         }
         self.debug = debug
         self.tools = []
+        
 
         # Initialize MCP client if provided, else None
         self.mcp_client = mcp_client
 
         # Load Jinja2 template if raw mode is enabled
-        if raw and jinja_template_path != '':
-            with open(jinja_template_path, 'r') as f:
-                template_content = f.read()
-                self.template = Template(template_content)
-        elif raw and jinja_template_path == '':
+        if raw and template_type != '':
+            self.renderer = TemplateRenderer(
+                template_type=template_type,
+                think=think
+            )
+        if raw and template_type == '':
             raise ValueError(
-                'If raw mode is true, a jinja template must be provided for prompt '
+                'If raw mode is true, a jinja template type must be provided for prompt '
                 'formatting. The jinja template only applies in raw mode.')
-
-        # Initialize conversation state with system prompt
-        self.state: Messages = {
-            'messages': [
-                self.create_message(
-                    role='system',
-                    content=self.system_prompt
-                )
-            ]
-        }
+        if raw and self.tool_call_pattern == '':
+            self.tool_call_pattern = r'<tool_call>(.*?)</tool_call>'
+            raise ValueError(
+                'Raw mode is true but no tool call pattern is provided. ' 
+                'A default pattern will be used but probably won\'t match your template.')
 
     async def retrieve_tools(self, lang_tools: list = []):
         """
@@ -171,11 +102,15 @@ class Ollama:
 
         If the mcp client object is not None tries to asynchronously retrieve the
         list of tools from the MCP server and update the tools attribute.
-        The LangChain tools must be provided as a list of dictionaries with the following keys:
-        - name: (str) the tool name
-        - description : (str) the tool description
-        - inputSchema : (dict) the tool input schema
-        - tool_object : (object) the langchain tool object with an invoke method.
+        The LangChain tools must be provided as a list of dictionaries with the following format:
+        {
+            'type': 'function',
+            'function': {
+                'name': tool["name"],
+                'description': tool["description"],
+                'parameters': tool["inputSchema"]
+            } 
+        }
 
         Parameters
         ----------
@@ -286,6 +221,7 @@ class Ollama:
                 # Create JSON object from the parsed response
                 try:
                     action = json.loads(parsed_response)
+                    console.print(f'[cyan]Parsed tool call: {action}[/cyan]')
                 except json.JSONDecodeError as e:
                     console.print(f'[yellow]JSON decode error while parsing tool call: {e}[/yellow]')
                     continue
@@ -317,6 +253,7 @@ class Ollama:
                         tool_calls=tool_calls_list
                     )
                 )
+                console.print(f'[cyan]Appended {tool_calls_list} tool calls to conversation memory[/cyan]')
                 return tool_calls_list
             else:
                 # Append the response without tool call to the conversation memory
@@ -364,16 +301,13 @@ class Ollama:
 
         # Prepare the prompt
         if self.raw:
-            prompt = self.template.render(
-                messages=self.state['messages'],
-                tools=self.tools,
-                add_generation_prompt=True,
-                enable_thinking=self.think
-            )
+            prompt = self.renderer.render(
+                state=self.state,
+                tools=self.tools)
 
             if self.debug:
                 console.print(Panel(
-                    prompt,
+                    Text(prompt),
                     title='[cyan bold]RENDERED PROMPT[/cyan bold]',
                     border_style='cyan',
                     expand=False
