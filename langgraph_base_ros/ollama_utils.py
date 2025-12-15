@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.text import Text
 from rich.panel import Panel
 
-from chat_template_render import TemplateRenderer, Messages
+from langgraph_base_ros.chat_template_render import TemplateRenderer, Messages
 
 console = Console()
 
