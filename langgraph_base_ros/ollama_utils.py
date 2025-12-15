@@ -108,7 +108,8 @@ class Ollama:
             'function': {
                 'name': tool["name"],
                 'description': tool["description"],
-                'parameters': tool["inputSchema"]
+                'parameters': tool["inputSchema"],
+                'tool_object': tool
             } 
         }
 

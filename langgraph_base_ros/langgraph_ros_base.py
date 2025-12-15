@@ -114,8 +114,7 @@ class LangGraphRosBase(Node):
             think=self.enable_thinking,
             raw=self.raw_mode,
             temperature=self.temperature,
-            jinja_template_path=self.chat_template_path,
-            system_prompt=self.system_prompt,
+            template_type=self.template_type,
             debug=self.debug_mode,
             repeat_penalty=self.repeat_penalty,
             top_k=self.top_k,
@@ -160,11 +159,11 @@ class LangGraphRosBase(Node):
             f'The parameter system_prompt_file is set to: [{self.system_prompt_file}]')
 
         # Declare and retrieve model chat template file path parameter
-        self.declare_parameter('model_chat_template_file', 'qwen3.jinja')
-        self.chat_template_path = self.get_parameter(
-            'model_chat_template_file').get_parameter_value().string_value
+        self.declare_parameter('template_type', 'qwen3')
+        self.template_type = self.get_parameter(
+            'template_type').get_parameter_value().string_value
         self.get_logger().info(
-            f'The parameter model_chat_template_file is set to: [{self.chat_template_path}]')
+            f'The parameter template_type is set to: [{self.template_type}]')
 
         # Declare and retrieve LLM model name parameter
         self.declare_parameter('llm_model', 'qwen3:0.6b')
@@ -181,7 +180,7 @@ class LangGraphRosBase(Node):
             f'The parameter tool_call_pattern is set to: [{self.tool_call_pattern}]')
 
         # Declare and retrieve Ollama generation parameters
-        self.declare_parameter('raw_mode', True)
+        self.declare_parameter('raw_mode', False)
         self.raw_mode = self.get_parameter(
             'raw_mode').get_parameter_value().bool_value
         self.get_logger().info(
