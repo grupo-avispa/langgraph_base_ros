@@ -11,6 +11,7 @@ from chat_template_render import TemplateRenderer, Messages
 
 console = Console()
 
+
 class Ollama:
     """
     This class is responsible for communicating with the Ollama Server.
@@ -18,20 +19,22 @@ class Ollama:
     The conversation memory is stored inside this class.
     """
 
-    def __init__(self,
-                 model: str = 'qwen3:0.6b',
-                 tool_call_pattern: str = '',
-                 template_type: str = '',
-                 mcp_client: Client | None = None,
-                 think: bool = False,
-                 raw: bool = False,
-                 temperature: float = 0.0,
-                 repeat_penalty: float = 1.1,
-                 top_k: int = 10,
-                 top_p: float = 0.25,
-                 num_ctx: int = 8192,
-                 num_predict: int = 1024,
-                 debug: bool = False):
+    def __init__(
+        self,
+        model: str = 'qwen3:0.6b',
+        tool_call_pattern: str = '',
+        template_type: str = '',
+        mcp_client: Client | None = None,
+        think: bool = False,
+        raw: bool = False,
+        temperature: float = 0.0,
+        repeat_penalty: float = 1.1,
+        top_k: int = 10,
+        top_p: float = 0.25,
+        num_ctx: int = 8192,
+        num_predict: int = 1024,
+        debug: bool = False
+    ) -> None:
         """
         Initialize the Ollama class.
 
@@ -74,8 +77,7 @@ class Ollama:
             'num_predict': num_predict
         }
         self.debug = debug
-        self.tools = []
-        
+        self.tools: list = []
 
         # Initialize MCP client if provided, else None
         self.mcp_client = mcp_client
@@ -93,7 +95,7 @@ class Ollama:
         if raw and self.tool_call_pattern == '':
             self.tool_call_pattern = r'<tool_call>(.*?)</tool_call>'
             raise ValueError(
-                'Raw mode is true but no tool call pattern is provided. ' 
+                'Raw mode is true but no tool call pattern is provided. '
                 'A default pattern will be used but probably won\'t match your template.')
 
     async def retrieve_tools(self, lang_tools: list = []):
@@ -124,8 +126,9 @@ class Ollama:
         self.lang_tools = lang_tools
         for tool in self.lang_tools:
             try:
-                if not all (k in tool for k in ("name", "description", "inputSchema", "tool_object")):
-                    raise KeyError("One or more required keys are missing in the langchain tool dictionary.")
+                if not all(k in tool for k in ("name", "description", "inputSchema", "tool_object")):
+                    raise KeyError(
+                        "One or more required keys are missing in the langchain tool dictionary.")
                 self.tools.append({
                     'type': 'function',
                     'function': {
@@ -183,7 +186,7 @@ class Ollama:
         """
         # Create base message with only role
         kwargs = {'role': role}
-        
+
         # Add optional attributes only if provided
         if content is not None:
             kwargs['content'] = content
@@ -193,7 +196,7 @@ class Ollama:
             kwargs['tool_calls'] = tool_calls
         if tool_name is not None:
             kwargs['tool_name'] = tool_name
-        
+
         return Message(**kwargs)
 
     def parse_tool_calls(self, response: str):
@@ -215,7 +218,7 @@ class Ollama:
         tool_call_matches = re.findall(self.tool_call_pattern, response, re.DOTALL)
         if tool_call_matches:
             tool_calls_list = []
-            
+
             # Iterate over all matches
             for match in tool_call_matches:
                 parsed_response = match.strip()
@@ -224,14 +227,15 @@ class Ollama:
                     action = json.loads(parsed_response)
                     console.print(f'[cyan]Parsed tool call: {action}[/cyan]')
                 except json.JSONDecodeError as e:
-                    console.print(f'[yellow]JSON decode error while parsing tool call: {e}[/yellow]')
+                    console.print(
+                        f'[yellow]JSON decode error while parsing tool call: {e}[/yellow]')
                     continue
-                
+
                 # Extract tool name and parameters
                 try:
                     tool_name = action['name']
                     tool_arguments = action['arguments']
-                    
+
                     # Create ToolCall object matching Ollama's structure
                     tool_call = Message.ToolCall(
                         function=Message.ToolCall.Function(
@@ -240,11 +244,11 @@ class Ollama:
                         )
                     )
                     tool_calls_list.append(tool_call)
-                    
+
                 except KeyError as e:
                     console.print(f'[yellow]Error parsing tool call: {e}[/yellow]')
                     continue
-            
+
             # Check if any tool calls were successfully parsed
             if tool_calls_list:
                 # Append the tool calls to the conversation memory
@@ -254,7 +258,8 @@ class Ollama:
                         tool_calls=tool_calls_list
                     )
                 )
-                console.print(f'[cyan]Appended {tool_calls_list} tool calls to conversation memory[/cyan]')
+                console.print(
+                    f'[cyan]Appended {tool_calls_list} tool calls to conversation memory[/cyan]')
                 return tool_calls_list
             else:
                 # Append the response without tool call to the conversation memory
@@ -346,20 +351,21 @@ class Ollama:
                 # Add the assistant message with tool calls to messages
                 # Only include attributes that are present in the response
                 msg_kwargs = {'role': 'assistant'}
-                
+
                 if hasattr(response.message, 'content') and response.message.content is not None:
                     msg_kwargs['content'] = response.message.content
                 if hasattr(response.message, 'thinking') and response.message.thinking is not None:
                     msg_kwargs['thinking'] = response.message.thinking
                 if hasattr(response.message, 'tool_calls') and response.message.tool_calls is not None:
                     msg_kwargs['tool_calls'] = response.message.tool_calls
-                
+
                 self.state["messages"].append(Message(**msg_kwargs))
-                tool_calls = response.message.tool_calls if hasattr(response.message, 'tool_calls') else None
-            
+                tool_calls = response.message.tool_calls if hasattr(
+                    response.message, 'tool_calls') else None
+
             if not tool_calls:
                 return self.state
-            
+
             if self.debug:
                 console.print(f'[cyan]Tool calls to execute: {len(tool_calls)}[/cyan]')
 
@@ -409,7 +415,8 @@ class Ollama:
                     )
                 else:
                     if self.debug:
-                        console.print(f'[red]Tool {tool_call.function.name} not found or failed to execute[/red]')
+                        console.print(
+                            f'[red]Tool {tool_call.function.name} not found or failed to execute[/red]')
                     self.state['messages'].append(
                         Message(
                             role='tool',
