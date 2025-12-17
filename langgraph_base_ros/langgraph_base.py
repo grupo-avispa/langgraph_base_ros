@@ -1,7 +1,9 @@
 """LangGraph base class for conversational AI."""
 
 import logging
+import inspect
 from abc import ABC, abstractmethod
+from langchain.tools.base import StructuredTool
 from langgraph_base_ros.ollama_utils import Ollama
 
 
@@ -47,6 +49,8 @@ class LangGraphBase(ABC):
         self.max_steps = max_steps
         if self.ollama_agent is None:
             raise ValueError('Ollama agent instance must be provided to LangGraphManager.')
+        
+        self._generate_tools_list()
 
     def _log(self, msg: str) -> None:
         """
@@ -62,6 +66,30 @@ class LangGraphBase(ABC):
             self.logger.info(msg)
         else:
             logging.info(msg)
+    
+    def _generate_tools_list(self):
+        """
+        Generate a list of available tools for the agent.
+        
+        Automatically discovers all methods decorated with @tool in the class
+        and generates the tools list in the required format.
+
+        Returns:
+            None: Updates self.lang_tools with the discovered tools.
+        """
+        self.lang_tools = []
+        
+        # Iterate through all members of the class
+        for name, method in inspect.getmembers(self):
+            print(f"Inspecting: {name} - Type: {type(method)}")
+            if isinstance(method, StructuredTool):
+                self.lang_tools.append({
+                    "name": method.name,
+                    "description": method.description,
+                    "inputSchema": method.args_schema,
+                    "tool_object": method
+                })
+                print(f"Added tool: {method.name}")
 
     @abstractmethod
     async def make_graph(self):

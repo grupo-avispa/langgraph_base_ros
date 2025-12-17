@@ -11,7 +11,6 @@ from langgraph_base_ros.chat_template_render import TemplateRenderer, Messages
 
 console = Console()
 
-
 class Ollama:
     """
     This class is responsible for communicating with the Ollama Server.
@@ -106,14 +105,11 @@ class Ollama:
         list of tools from the MCP server and update the tools attribute.
         The LangChain tools must be provided as a list of dictionaries with the following format:
         {
-            'type': 'function',
-            'function': {
-                'name': tool["name"],
-                'description': tool["description"],
-                'parameters': tool["inputSchema"],
-                'tool_object': tool
-            } 
-        }
+            'name': tool["name"],
+            'description': tool["description"],
+            'parameters': tool["inputSchema"],
+            'tool_object': tool
+        } 
 
         Parameters
         ----------
@@ -153,6 +149,7 @@ class Ollama:
                     })
         else:
             console.print('[yellow]MCP client is not initialized. Cannot retrieve tools[/yellow]')
+        console.print(f'[green]Total tools available: {self.tools}[/green]')
 
     def create_message(
             self,
