@@ -81,7 +81,6 @@ class LangGraphBase(ABC):
         
         # Iterate through all members of the class
         for name, method in inspect.getmembers(self):
-            print(f"Inspecting: {name} - Type: {type(method)}")
             if isinstance(method, StructuredTool):
                 self.lang_tools.append({
                     "name": method.name,
@@ -89,7 +88,6 @@ class LangGraphBase(ABC):
                     "inputSchema": method.args_schema,
                     "tool_object": method
                 })
-                print(f"Added tool: {method.name}")
 
     @abstractmethod
     async def make_graph(self):
