@@ -94,27 +94,27 @@ class LangGraphRosBase(Node):
             self.get_logger().error(f'Error initializing MCP client: {e}')
             self.mcp_client = None  # type: ignore[assignment]
 
-        # Get system prompt template content
-        try:
-            self.get_logger().info(f'Loading system prompt from: {self.system_prompt_file}')
-            with open(self.system_prompt_file, 'r') as f:
-                self.system_prompt = f.read()
-        except Exception as e:
-            self.get_logger().error(
-                f'System prompt could not be loaded from {self.system_prompt_file}: {e}')
-            self.system_prompt = 'You are a helpful assistant.'
-            self.get_logger().error(f'System prompt set to default: {self.system_prompt}')
+        # # Get system prompt template content
+        # try:
+        #     self.get_logger().info(f'Loading system prompt from: {self.system_prompt_file}')
+        #     with open(self.system_prompt_file, 'r') as f:
+        #         self.system_prompt = f.read()
+        # except Exception as e:
+        #     self.get_logger().error(
+        #         f'System prompt could not be loaded from {self.system_prompt_file}: {e}')
+        #     self.system_prompt = 'You are a helpful assistant.'
+        #     self.get_logger().error(f'System prompt set to default: {self.system_prompt}')
 
         # Initialize Ollama agent with retrieved tools and parameters
         self.get_logger().info(f'Initializing Ollama agent with model: {self.llm_model}')
         self.ollama_agent = Ollama(
             model=self.llm_model,
             tool_call_pattern=self.tool_call_pattern,
+            template_type=self.template_type,
             mcp_client=self.mcp_client,
             think=self.enable_thinking,
             raw=self.raw_mode,
             temperature=self.temperature,
-            template_type=self.template_type,
             debug=self.debug_mode,
             repeat_penalty=self.repeat_penalty,
             top_k=self.top_k,
@@ -151,12 +151,12 @@ class LangGraphRosBase(Node):
         self.get_logger().info(
             f'The parameter mcp_servers is set to: [{self.mcp_servers}]')
 
-        # Declare and retrieve system prompt template path parameter
-        self.declare_parameter('system_prompt_file', 'system_prompt.jinja')
-        self.system_prompt_file = self.get_parameter(
-            'system_prompt_file').get_parameter_value().string_value
-        self.get_logger().info(
-            f'The parameter system_prompt_file is set to: [{self.system_prompt_file}]')
+        # # Declare and retrieve system prompt template path parameter
+        # self.declare_parameter('system_prompt_file', 'system_prompt.jinja')
+        # self.system_prompt_file = self.get_parameter(
+        #     'system_prompt_file').get_parameter_value().string_value
+        # self.get_logger().info(
+        #     f'The parameter system_prompt_file is set to: [{self.system_prompt_file}]')
 
         # Declare and retrieve model chat template file path parameter
         self.declare_parameter('template_type', 'qwen3')

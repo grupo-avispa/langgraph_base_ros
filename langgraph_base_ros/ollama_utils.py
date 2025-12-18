@@ -32,7 +32,7 @@ class Ollama:
         top_p: float = 0.25,
         num_ctx: int = 8192,
         num_predict: int = 1024,
-        debug: bool = False
+        debug: bool = True
     ) -> None:
         """
         Initialize the Ollama class.
