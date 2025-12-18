@@ -49,8 +49,6 @@ class LangGraphBase(ABC):
         self.max_steps = max_steps
         if self.ollama_agent is None:
             raise ValueError('Ollama agent instance must be provided to LangGraphManager.')
-        
-        self._generate_tools_list()
 
     def _log(self, msg: str) -> None:
         """
