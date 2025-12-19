@@ -29,7 +29,8 @@ class LangGraphBase(ABC):
             self,
             logger=None,
             ollama_agent: Ollama | None = None,
-            max_steps: int = 5) -> None:
+            max_steps: int = 5
+        ) -> None:
         """
         Initialize the LangGraph Manager.
 
@@ -64,6 +65,21 @@ class LangGraphBase(ABC):
             self.logger.info(msg)
         else:
             logging.info(msg)
+    
+    def _get_system_prompt(self, system_prompt_path: str | None = None) -> str:
+        """
+        Retrieve the system prompt for the agent.
+        Returns:
+            None: Sets the system prompt attribute.
+        """
+        try:
+            with open(system_prompt_path, 'r') as f:
+                self.sys_prompt = f.read()
+        except FileNotFoundError:
+            self._log(f"Supervisor system prompt template not found at path:" + 
+                        f"{system_prompt_path}")
+            self.sys_prompt = "You are a helpful assistant designed to perform specific tasks."
+        return self.sys_prompt
     
     def _generate_tools_list(self):
         """
