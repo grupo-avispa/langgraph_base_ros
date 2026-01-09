@@ -136,7 +136,7 @@ class Ollama:
             except Exception as e:
                 console.print(f'[yellow]Error retrieving langchain tool attributes: {e}[/yellow]')
         if self.mcp_client is not None:
-            async with self.mcp_client:
+            try:
                 tools = await self.mcp_client.list_tools()
                 for tool in tools:
                     self.tools.append({
@@ -147,6 +147,8 @@ class Ollama:
                             'parameters': tool.inputSchema
                         }
                     })
+            except Exception as e:
+                console.print(f'[yellow]Error retrieving MCP tools: {e}[/yellow]')
         else:
             console.print('[yellow]MCP client is not initialized. Cannot retrieve tools[/yellow]')
         console.print(f'[green]Total tools available: {self.tools}[/green]')

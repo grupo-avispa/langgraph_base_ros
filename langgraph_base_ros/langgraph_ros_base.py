@@ -49,7 +49,11 @@ class LangGraphRosBase(Node):
 
         # Initialize Ollama agent
         try:
-            self.loop.run_until_complete(self.initialize_ollama_agent())
+            self.loop.run_until_complete(self.initialize_mcp_client(
+                self.mcp_servers, 
+                self.agent_params
+            ))
+            self.initialize_ollama_agent(self.agent_params)
         except Exception as e:
             self.get_logger().error(f'Failed to initialize Ollama agent: {e}')
             raise
@@ -67,9 +71,9 @@ class LangGraphRosBase(Node):
 
         self.get_logger().info('LangGraphManager graph created successfully...')
 
-    async def initialize_ollama_agent(self) -> None:
+    async def initialize_mcp_client(self, mcp_servers: str, agent_params: dict) -> None:
         """
-        Initialize the mcp client and Ollama agent with the required parameters.
+        Initialize the mcp client and modify agent_params with the result.
 
         Returns:
             None
@@ -77,39 +81,40 @@ class LangGraphRosBase(Node):
         # Initialize MCP client
         mcp_servers_config = {}
         try:
-            self.get_logger().info(f'Loading MCP servers from: {self.mcp_servers}')
-            with open(self.mcp_servers, 'r') as f:
+            self.get_logger().info(f'Loading MCP servers from: {mcp_servers}')
+            with open(mcp_servers, 'r') as f:
                 mcp_servers_config = json.load(f)
             self.get_logger().info(f'MCP servers config: {mcp_servers_config}')
         except FileNotFoundError:
-            self.get_logger().error(f'MCP servers file not found: {self.mcp_servers}')
+            self.get_logger().error(f'MCP servers file not found: {mcp_servers}')
         except json.JSONDecodeError as e:
             self.get_logger().error(f'Invalid JSON in MCP servers file: {e}')
 
         # Retrieve available tools from MCP
         self.get_logger().info('Initializing MCP client...')
         try:
-            self.mcp_client = Client(mcp_servers_config)
+            agent_params['mcp_client'] = Client(mcp_servers_config)
+            # Connect the client once and keep it open
+            await agent_params['mcp_client'].__aenter__()
+            self.get_logger().info('MCP client initialized successfully')
+            deleteme_list = await agent_params['mcp_client'].list_tools()
+            self.get_logger().info(f'Retrieved {len(deleteme_list)} tools from MCP server.')
         except Exception as e:
             self.get_logger().error(f'Error initializing MCP client: {e}')
-            self.mcp_client = None  # type: ignore[assignment]
+            agent_params['mcp_client'] = None  # type: ignore[assignment]
 
-        # Initialize Ollama agent with retrieved tools and parameters
-        self.get_logger().info(f'Initializing Ollama agent with model: {self.llm_model}')
+    def initialize_ollama_agent(self, agent_params: dict) -> None:
+        """
+        Initialize the mcp client and Ollama agent with the required parameters.
+
+        Returns:
+            None
+        """
+
+        # Initialize Ollama agent with retrieved parameters
+        self.get_logger().info(f'Initializing Ollama agent with model: {agent_params["model"]}')
         self.ollama_agent = Ollama(
-            model=self.llm_model,
-            tool_call_pattern=self.tool_call_pattern,
-            template_type=self.template_type,
-            mcp_client=self.mcp_client,
-            think=self.enable_thinking,
-            raw=self.raw_mode,
-            temperature=self.temperature,
-            debug=self.debug_mode,
-            repeat_penalty=self.repeat_penalty,
-            top_k=self.top_k,
-            top_p=self.top_p,
-            num_ctx=self.num_ctx,
-            num_predict=self.num_predict,
+            **agent_params,
         )
         self.get_logger().info('Ollama agent initialized successfully')
 
@@ -126,6 +131,7 @@ class LangGraphRosBase(Node):
         Returns:
             None
         """
+        self.agent_params = {}
         # Declare and retrieve topic parameters
         self.declare_parameter('service_name', 'agent_service')
         self.service_name = self.get_parameter(
@@ -149,73 +155,73 @@ class LangGraphRosBase(Node):
 
         # Declare and retrieve model chat template file path parameter
         self.declare_parameter('template_type', 'qwen3')
-        self.template_type = self.get_parameter(
+        self.agent_params['template_type'] = self.get_parameter(
             'template_type').get_parameter_value().string_value
         self.get_logger().info(
-            f'The parameter template_type is set to: [{self.template_type}]')
+            f'The parameter template_type is set to: [{self.agent_params["template_type"]}]')
 
         # Declare and retrieve LLM model name parameter
         self.declare_parameter('llm_model', 'qwen3:0.6b')
-        self.llm_model = self.get_parameter(
+        self.agent_params['model'] = self.get_parameter(
             'llm_model').get_parameter_value().string_value
         self.get_logger().info(
-            f'The parameter llm_model is set to: [{self.llm_model}]')
+            f'The parameter llm_model is set to: [{self.agent_params["model"]}]')
 
         # Declare tool call regex pattern to extract tool calls from LLM response
         self.declare_parameter('tool_call_pattern', '<tool_call>(.*?)</tool_call>')
-        self.tool_call_pattern = self.get_parameter(
+        self.agent_params['tool_call_pattern'] = self.get_parameter(
             'tool_call_pattern').get_parameter_value().string_value
         self.get_logger().info(
-            f'The parameter tool_call_pattern is set to: [{self.tool_call_pattern}]')
+            f'The parameter tool_call_pattern is set to: [{self.agent_params["tool_call_pattern"]}]')
 
         # Declare and retrieve Ollama generation parameters
         self.declare_parameter('raw_mode', False)
-        self.raw_mode = self.get_parameter(
+        self.agent_params['raw'] = self.get_parameter(
             'raw_mode').get_parameter_value().bool_value
         self.get_logger().info(
-            f'The parameter raw_mode is set to: [{self.raw_mode}]')
+            f'The parameter raw_mode is set to: [{self.agent_params["raw"]}]')
 
         self.declare_parameter('debug_mode', True)
-        self.debug_mode = self.get_parameter(
+        self.agent_params['debug'] = self.get_parameter(
             'debug_mode').get_parameter_value().bool_value
         self.get_logger().info(
-            f'The parameter debug_mode is set to: [{self.debug_mode}]')
+            f'The parameter debug_mode is set to: [{self.agent_params["debug"]}]')
 
         self.declare_parameter('temperature', 0.0)
-        self.temperature = self.get_parameter(
+        self.agent_params['temperature'] = self.get_parameter(
             'temperature').get_parameter_value().double_value
         self.get_logger().info(
-            f'The parameter temperature is set to: [{self.temperature}]')
+            f'The parameter temperature is set to: [{self.agent_params["temperature"]}]')
 
         self.declare_parameter('repeat_penalty', 1.1)
-        self.repeat_penalty = self.get_parameter(
+        self.agent_params['repeat_penalty'] = self.get_parameter(
             'repeat_penalty').get_parameter_value().double_value
         self.get_logger().info(
-            f'The parameter repeat_penalty is set to: [{self.repeat_penalty}]')
+            f'The parameter repeat_penalty is set to: [{self.agent_params["repeat_penalty"]}]')
 
         self.declare_parameter('top_k', 10)
-        self.top_k = self.get_parameter(
+        self.agent_params['top_k'] = self.get_parameter(
             'top_k').get_parameter_value().integer_value
         self.get_logger().info(
-            f'The parameter top_k is set to: [{self.top_k}]')
+            f'The parameter top_k is set to: [{self.agent_params["top_k"]}]')
 
         self.declare_parameter('top_p', 0.25)
-        self.top_p = self.get_parameter(
+        self.agent_params['top_p'] = self.get_parameter(
             'top_p').get_parameter_value().double_value
         self.get_logger().info(
-            f'The parameter top_p is set to: [{self.top_p}]')
+            f'The parameter top_p is set to: [{self.agent_params["top_p"]}]')
 
         self.declare_parameter('num_ctx', 8192)
-        self.num_ctx = self.get_parameter(
+        self.agent_params['num_ctx'] = self.get_parameter(
             'num_ctx').get_parameter_value().integer_value
         self.get_logger().info(
-            f'The parameter num_ctx is set to: [{self.num_ctx}]')
+            f'The parameter num_ctx is set to: [{self.agent_params["num_ctx"]}]')
 
         self.declare_parameter('num_predict', 256)
-        self.num_predict = self.get_parameter(
+        self.agent_params['num_predict'] = self.get_parameter(
             'num_predict').get_parameter_value().integer_value
         self.get_logger().info(
-            f'The parameter num_predict is set to: [{self.num_predict}]')
+            f'The parameter num_predict is set to: [{self.agent_params["num_predict"]}]')
 
         # Declare and retrieve LangGraph workflow parameters
         self.declare_parameter('max_steps', 5)
@@ -225,10 +231,22 @@ class LangGraphRosBase(Node):
             f'The parameter max_steps is set to: [{self.max_steps}]')
 
         self.declare_parameter('enable_thinking', False)
-        self.enable_thinking = self.get_parameter(
+        self.agent_params['think'] = self.get_parameter(
             'enable_thinking').get_parameter_value().bool_value
         self.get_logger().info(
-            f'The parameter enable_thinking is set to: [{self.enable_thinking}]')
+            f'The parameter enable_thinking is set to: [{self.agent_params["think"]}]')
+
+    def __del__(self):
+        """Clean up resources when the node is destroyed."""
+        if hasattr(self, 'agent_params') and 'mcp_client' in self.agent_params:
+            if self.agent_params['mcp_client'] is not None:
+                try:
+                    self.loop.run_until_complete(
+                        self.agent_params['mcp_client'].__aexit__(None, None, None)
+                    )
+                except Exception as e:
+                    if hasattr(self, 'get_logger'):
+                        self.get_logger().error(f'Error closing MCP client: {e}')
 
     @abstractmethod
     def agent_callback(self, request, response) -> None:
