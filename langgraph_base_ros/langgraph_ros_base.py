@@ -97,8 +97,6 @@ class LangGraphRosBase(Node):
             # Connect the client once and keep it open
             await agent_params['mcp_client'].__aenter__()
             self.get_logger().info('MCP client initialized successfully')
-            deleteme_list = await agent_params['mcp_client'].list_tools()
-            self.get_logger().info(f'Retrieved {len(deleteme_list)} tools from MCP server.')
         except Exception as e:
             self.get_logger().error(f'Error initializing MCP client: {e}')
             agent_params['mcp_client'] = None  # type: ignore[assignment]

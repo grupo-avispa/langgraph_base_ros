@@ -137,7 +137,8 @@ class Ollama:
                 console.print(f'[yellow]Error retrieving langchain tool attributes: {e}[/yellow]')
         if self.mcp_client is not None:
             try:
-                tools = await self.mcp_client.list_tools()
+                async with self.mcp_client as client:
+                    tools = await client.list_tools()
                 for tool in tools:
                     self.tools.append({
                         'type': 'function',
@@ -151,7 +152,7 @@ class Ollama:
                 console.print(f'[yellow]Error retrieving MCP tools: {e}[/yellow]')
         else:
             console.print('[yellow]MCP client is not initialized. Cannot retrieve tools[/yellow]')
-        console.print(f'[green]Total tools available: {self.tools}[/green]')
+        # console.print(f'[green]Total tools available: {self.tools}[/green]')
 
     def create_message(
             self,
@@ -380,7 +381,7 @@ class Ollama:
                     for lang_tool in self.lang_tools:
                         if lang_tool['name'] == tool_call.function.name:
                             # Call the langchain tool
-                            tool_response = lang_tool['tool_object'].invoke(
+                            tool_response = await lang_tool['tool_object'].ainvoke(
                                 tool_call.function.arguments
                             )
                             tool_call_done = True
