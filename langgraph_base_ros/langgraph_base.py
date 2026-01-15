@@ -26,11 +26,11 @@ class LangGraphBase(ABC):
     """
 
     def __init__(
-            self,
-            logger=None,
-            ollama_agent: Ollama | None = None,
-            max_steps: int = 5
-        ) -> None:
+        self,
+        logger=None,
+        ollama_agent: Ollama | None = None,
+        max_steps: int = 5
+    ) -> None:
         """
         Initialize the LangGraph Manager.
 
@@ -51,40 +51,80 @@ class LangGraphBase(ABC):
         if self.ollama_agent is None:
             raise ValueError('Ollama agent instance must be provided to LangGraphManager.')
 
-    def _log(self, msg: str) -> None:
-        """
-        Log helper. Uses ROS2 logger if available, else Python logging.
+    def _log_info(self, msg: str) -> None:
+        """Log info message using ROS2 logger or Python logging.
 
-        Parameters:
-            msg (str): Message to log.
-
-        Returns:
-            None
+        Parameters
+        ----------
+        msg : str
+            Message to log.
         """
         if self.logger is not None:
             self.logger.info(msg)
         else:
             logging.info(msg)
-    
+
+    def _log_debug(self, msg: str) -> None:
+        """Log debug message using ROS2 logger or Python logging.
+
+        Parameters
+        ----------
+        msg : str
+            Message to log.
+        """
+        if self.logger is not None:
+            self.logger.debug(msg)
+        else:
+            logging.debug(msg)
+
+    def _log_warning(self, msg: str) -> None:
+        """Log warning message using ROS2 logger or Python logging.
+
+        Parameters
+        ----------
+        msg : str
+            Message to log.
+        """
+        if self.logger is not None:
+            self.logger.warning(msg)
+        else:
+            logging.warning(msg)
+
+    def _log_error(self, msg: str) -> None:
+        """Log error message using ROS2 logger or Python logging.
+
+        Parameters
+        ----------
+        msg : str
+            Message to log.
+        """
+        if self.logger is not None:
+            self.logger.error(msg)
+        else:
+            logging.error(msg)
+
     def _get_system_prompt(self, system_prompt_path: str | None = None) -> str:
         """
         Retrieve the system prompt for the agent.
+
         Returns:
             None: Sets the system prompt attribute.
         """
         try:
-            with open(system_prompt_path, 'r') as f:
+            with open(system_prompt_path, 'r') as f:  # type: ignore[arg-type]
                 self.sys_prompt = f.read()
         except FileNotFoundError:
-            self._log(f"Supervisor system prompt template not found at path:" + 
-                        f"{system_prompt_path}")
-            self.sys_prompt = "You are a helpful assistant designed to perform specific tasks."
+            self._log_error(
+                'Supervisor system prompt template not found at path:'
+                f'{system_prompt_path}'
+            )
+            self.sys_prompt = 'You are a helpful assistant designed to perform specific tasks.'
         return self.sys_prompt
-    
+
     def _generate_tools_list(self):
         """
         Generate a list of available tools for the agent.
-        
+
         Automatically discovers all methods decorated with @tool in the class
         and generates the tools list in the required format.
 
@@ -92,15 +132,15 @@ class LangGraphBase(ABC):
             None: Updates self.lang_tools with the discovered tools.
         """
         self.lang_tools = []
-        
+
         # Iterate through all members of the class
         for name, method in inspect.getmembers(self):
             if isinstance(method, StructuredTool):
                 self.lang_tools.append({
-                    "name": method.name,
-                    "description": method.description,
-                    "inputSchema": method.args_schema,
-                    "tool_object": method
+                    'name': method.name,
+                    'description': method.description,
+                    'inputSchema': method.args_schema,
+                    'tool_object': method
                 })
 
     @abstractmethod

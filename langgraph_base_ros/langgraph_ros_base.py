@@ -50,7 +50,7 @@ class LangGraphRosBase(Node):
         # Initialize Ollama agent
         try:
             self.loop.run_until_complete(self.initialize_mcp_client(
-                self.mcp_servers, 
+                self.mcp_servers,
                 self.agent_params
             ))
             self.initialize_ollama_agent(self.agent_params)
@@ -108,7 +108,6 @@ class LangGraphRosBase(Node):
         Returns:
             None
         """
-
         # Initialize Ollama agent with retrieved parameters
         self.get_logger().info(f'Initializing Ollama agent with model: {agent_params["model"]}')
         self.ollama_agent = Ollama(
@@ -129,7 +128,7 @@ class LangGraphRosBase(Node):
         Returns:
             None
         """
-        self.agent_params = {}
+        self.agent_params: dict = {}
         # Declare and retrieve topic parameters
         self.declare_parameter('service_name', 'agent_service')
         self.service_name = self.get_parameter(
@@ -170,7 +169,8 @@ class LangGraphRosBase(Node):
         self.agent_params['tool_call_pattern'] = self.get_parameter(
             'tool_call_pattern').get_parameter_value().string_value
         self.get_logger().info(
-            f'The parameter tool_call_pattern is set to: [{self.agent_params["tool_call_pattern"]}]')
+            f'The parameter tool_call_pattern is set to: '
+            f'[{self.agent_params["tool_call_pattern"]}]')
 
         # Declare and retrieve Ollama generation parameters
         self.declare_parameter('raw_mode', False)
