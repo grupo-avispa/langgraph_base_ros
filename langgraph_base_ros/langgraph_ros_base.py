@@ -80,26 +80,28 @@ class LangGraphRosBase(Node):
         """
         # Initialize MCP client
         mcp_servers_config = {}
-        try:
-            self.get_logger().info(f'Loading MCP servers from: {mcp_servers}')
-            with open(mcp_servers, 'r') as f:
-                mcp_servers_config = json.load(f)
-            self.get_logger().info(f'MCP servers config: {mcp_servers_config}')
-        except FileNotFoundError:
-            self.get_logger().error(f'MCP servers file not found: {mcp_servers}')
-        except json.JSONDecodeError as e:
-            self.get_logger().error(f'Invalid JSON in MCP servers file: {e}')
 
-        # Retrieve available tools from MCP
-        self.get_logger().info('Initializing MCP client...')
-        try:
-            agent_params['mcp_client'] = Client(mcp_servers_config)
-            # Connect the client once and keep it open
-            await agent_params['mcp_client'].__aenter__()
-            self.get_logger().info('MCP client initialized successfully')
-        except Exception as e:
-            self.get_logger().error(f'Error initializing MCP client: {e}')
-            agent_params['mcp_client'] = None  # type: ignore[assignment]
+        if mcp_servers:
+            try:
+                self.get_logger().info(f'Loading MCP servers from: {mcp_servers}')
+                with open(mcp_servers, 'r') as f:
+                    mcp_servers_config = json.load(f)
+                self.get_logger().info(f'MCP servers config: {mcp_servers_config}')
+
+                # Retrieve available tools from MCP
+                self.get_logger().info('Initializing MCP client...')
+                try:
+                    agent_params['mcp_client'] = Client(mcp_servers_config)
+                    # Connect the client once and keep it open
+                    await agent_params['mcp_client'].__aenter__()
+                    self.get_logger().info('MCP client initialized successfully')
+                except Exception as e:
+                    self.get_logger().error(f'Error initializing MCP client: {e}')
+                    agent_params['mcp_client'] = None  # type: ignore[assignment]
+            except FileNotFoundError:
+                self.get_logger().error('MCP servers file not found')
+            except json.JSONDecodeError as e:
+                self.get_logger().error(f'Invalid JSON in MCP servers file: {e}')
 
     def initialize_ollama_agent(self, agent_params: dict) -> None:
         """
