@@ -3,7 +3,7 @@
 import logging
 import inspect
 from abc import ABC, abstractmethod
-from langchain.tools.base import StructuredTool
+from langchain_core.tools import StructuredTool
 from langgraph_base_ros.ollama_utils import Ollama
 
 
