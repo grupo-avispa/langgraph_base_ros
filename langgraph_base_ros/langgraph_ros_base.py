@@ -159,6 +159,12 @@ class LangGraphRosBase(Node):
         self.get_logger().info(
             f'The parameter template_type is set to: [{self.agent_params["template_type"]}]')
 
+        self.declare_parameter('template_file', 'qwen3.jinja')
+        self.agent_params['template_file'] = self.get_parameter(
+            'template_file').get_parameter_value().string_value
+        self.get_logger().info(
+            f'The parameter template_file is set to: [{self.agent_params["template_file"]}]')
+
         # Declare and retrieve LLM model name parameter
         self.declare_parameter('llm_model', 'qwen3:0.6b')
         self.agent_params['model'] = self.get_parameter(

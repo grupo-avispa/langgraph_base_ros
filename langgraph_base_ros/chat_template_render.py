@@ -70,6 +70,7 @@ class TemplateRenderer:
     Renders chat prompts using Jinja2 templates for different LLMs.
     Attributes:
         template_type (str): Type of the template (e.g., 'mistral', 'qwen3', 'llama').
+        template_file (str): Path to the Jinja2 template file.
         template (Template): Jinja2 template object.
         render_params (dict): Parameters for rendering the template.
     Methods:
@@ -79,23 +80,25 @@ class TemplateRenderer:
     
     def __init__(self, 
                  template_type: str,
+                 template_file: str ,
                  think: bool = False):
         self.template_type = template_type
+        self.template_file = template_file
         self.available_templates = {
             "mistral": {
-                "template_path": "../templates/mistral.jinja",
+                "template_path": self.template_file,
                 "eos_token": "</s>",
                 "bos_token": "<s>",
                 "pad_token": ""
             },
             "qwen3": {
-                "template_path": "../templates/qwen3.jinja",
+                "template_path": self.template_file,
                 "eos_token": "<|im_end|>",
                 "bos_token": "",
                 "pad_token": "<|endoftext|>"
             },
             "llama": {
-                "template_path": "../templates/llama.jinja",
+                "template_path": self.template_file,
                 "eos_token": "<|end_of_text|>",
                 "bos_token": "<|begin_of_text|>",
                 "pad_token": "<|end_of_text|>"

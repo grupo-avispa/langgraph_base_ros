@@ -23,6 +23,7 @@ class Ollama:
         model: str = 'qwen3:0.6b',
         tool_call_pattern: str = '',
         template_type: str = '',
+        template_file: str = '',
         mcp_client: Client | None = None,
         think: bool = False,
         raw: bool = False,
@@ -82,20 +83,25 @@ class Ollama:
         self.mcp_client = mcp_client
 
         # Load Jinja2 template if raw mode is enabled
-        if raw and template_type != '':
-            self.renderer = TemplateRenderer(
-                template_type=template_type,
-                think=think
-            )
         if raw and template_type == '':
             raise ValueError(
                 'If raw mode is true, a jinja template type must be provided for prompt '
+                'formatting. The jinja template only applies in raw mode.')
+        if raw and template_file == '':
+            raise ValueError(
+                'If raw mode is true, a jinja template file must be provided for prompt '
                 'formatting. The jinja template only applies in raw mode.')
         if raw and self.tool_call_pattern == '':
             self.tool_call_pattern = r'<tool_call>(.*?)</tool_call>'
             raise ValueError(
                 'Raw mode is true but no tool call pattern is provided. '
                 'A default pattern will be used but probably won\'t match your template.')
+        if raw and template_type != '':
+            self.renderer = TemplateRenderer(
+                template_type=template_type,
+                template_file=template_file,
+                think=think
+            )
 
     async def retrieve_tools(self, lang_tools: list = []):
         """
@@ -333,6 +339,13 @@ class Ollama:
                     border_style='yellow',
                     expand=False
                 ))
+                if self.think:
+                    console.print(Panel(
+                        response['thinking'],
+                        title='[yellow bold]RAW THINKING TEXT[/yellow bold]',
+                        border_style='yellow',
+                        expand=False
+                    ))
         else:
             response = chat(
                 model=self.model,
