@@ -44,8 +44,14 @@ class LangGraphRosBase(Node):
 
         # Create a persistent event loop for async operations
         # Using asyncio.new_event_loop() to avoid deprecation warning
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
+        try:
+            # Try to get the loop that is already running
+            self.loop = asyncio.get_running_loop()
+            self.get_logger().info('Using existing running event loop...')
+        except RuntimeError:
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+            self.get_logger().info('Created new event loop for async operations...')
 
         # Initialize Ollama agent
         try:
