@@ -24,6 +24,7 @@ class Ollama:
         tool_call_pattern: str = '',
         template_type: str = '',
         template_file: str = '',
+        available_tools: list = [],
         mcp_client: Client | None = None,
         think: bool = False,
         raw: bool = False,
@@ -36,35 +37,56 @@ class Ollama:
         debug: bool = True
     ) -> None:
         """
-        Initialize the Ollama class.
+        Initialize the Ollama class for communication with Ollama Server.
 
         Parameters
         ----------
-        model       :   str
-            the model name
-        lang_tools       :   list
-            the list of langchain tools available for use.
-        state       :   Messages
-            the conversation history state
-        mcp_client : Client
-            the MCP client to use for tool calls besides the langchain tools.
-        tool_call_pattern : str
-            the regex pattern to identify tool calls in the model response
-        think       :   bool
-            (for thinking models) should the model think before responding?
-        stream      :   bool
-            if false the response will be returned as a single response object,
-            rather than a stream of objects.
-        raw         :   bool
-            if true no formatting will be applied to the prompt. You may choose to use the raw
-            parameter if you are specifying a full templated prompt in your request to the API
-        render :   TemplateRenderer
-            the template renderer object to format prompts in raw mode.
-        options     :   dict
-            a dictionary of options to configure model inference.
+        model : str, optional
+            The name of the Ollama model to use (default: 'qwen3:0.6b').
+        tool_call_pattern : str, optional
+            The regex pattern to identify tool calls in the model response when using raw mode.
+            Default pattern is applied if raw=True and pattern is empty.
+        template_type : str, optional
+            The type of Jinja2 template to use for prompt formatting in raw mode.
+            Required when raw=True.
+        template_file : str, optional
+            The path to the Jinja2 template file for prompt formatting in raw mode.
+            Required when raw=True.
+        available_tools : list, optional
+            List of tool names available for the model to use from MCP servers (default: []).
+        mcp_client : Client | None, optional
+            The MCP (Model Context Protocol) client instance for executing tool calls
+            from MCP servers (default: None).
+        think : bool, optional
+            Enable thinking mode for models that support reasoning before responding (default: False).
+        raw : bool, optional
+            If True, no automatic formatting is applied to prompts. Requires template_type
+            and template_file to be specified (default: False).
+        temperature : float, optional
+            Controls randomness in model responses. Lower values make output more deterministic
+            (default: 0.0).
+        repeat_penalty : float, optional
+            Penalizes repetition in model responses. Values > 1.0 reduce repetition (default: 1.1).
+        top_k : int, optional
+            Limits the next token selection to the K most likely tokens (default: 10).
+        top_p : float, optional
+            Nucleus sampling parameter. Only tokens with cumulative probability up to top_p
+            are considered (default: 0.25).
+        num_ctx : int, optional
+            The size of the context window in tokens (default: 8192).
+        num_predict : int, optional
+            Maximum number of tokens to generate in the response (default: 1024).
+        debug : bool, optional
+            Enable debug output for detailed logging of requests and responses (default: True).
+
+        Raises
+        ------
+        ValueError
+            If raw=True but template_type or template_file are not provided.
         """
         self.model = model
         self.lang_tools: list = []
+        self.available_tools = available_tools
         self.tool_call_pattern = tool_call_pattern
         self.think = think
         self.raw = raw
@@ -105,25 +127,35 @@ class Ollama:
 
     async def retrieve_tools(self, lang_tools: list = []):
         """
-        Initialize tool list with langchain tools received as class parameter.
+        Initialize and populate the tool list with LangChain and MCP tools.
 
-        If the mcp client object is not None tries to asynchronously retrieve the
-        list of tools from the MCP server and update the tools attribute.
-        The LangChain tools must be provided as a list of dictionaries with the following format:
-        {
-            'name': tool["name"],
-            'description': tool["description"],
-            'parameters': tool["inputSchema"],
-            'tool_object': tool
-        } 
+        This method processes LangChain tools from the parameter and asynchronously
+        retrieves tools from the MCP server if an MCP client is configured. All tools
+        are converted to Ollama's function calling format and stored in self.tools.
 
         Parameters
         ----------
-        lang_tools : list
-            the list of langchain tools available for use.
+        lang_tools : list, optional
+            List of LangChain tools as dictionaries with the required structure:
+            {
+                'name': str,           # Tool name
+                'description': str,    # Tool description
+                'inputSchema': dict,   # JSON schema for tool parameters
+                'tool_object': object  # The actual tool object to invoke
+            }
+            Default is an empty list.
 
         Returns
+        -------
         None
+            Updates self.tools in-place with formatted tool definitions.
+
+        Notes
+        -----
+        - LangChain tools are processed first and added to self.lang_tools
+        - MCP tools are retrieved only if self.mcp_client is not None
+        - All tools are converted to Ollama's function calling format
+        - Errors during tool retrieval are logged but don't stop execution
         """
         self.lang_tools = lang_tools
         for tool in self.lang_tools:
@@ -146,6 +178,8 @@ class Ollama:
                 async with self.mcp_client as client:
                     tools = await client.list_tools()
                 for tool in tools:
+                    if tool.name not in self.available_tools:
+                        continue
                     self.tools.append({
                         'type': 'function',
                         'function': {
@@ -207,18 +241,38 @@ class Ollama:
 
     def parse_tool_calls(self, response: str):
         """
-        Parse tool calls from the model response (for raw mode).
-        Returns a list of Message.ToolCall objects matching Ollama's structure.
+        Parse and extract tool calls from model response text when using raw mode.
+
+        This method searches for tool call patterns in the response using the configured
+        regex pattern, extracts the JSON-formatted tool calls, and converts them to
+        Ollama's Message.ToolCall format. The parsed tool calls are automatically
+        appended to the conversation memory (self.state['messages']).
 
         Parameters
         ----------
         response : str
-            the response from the model
+            The raw text response from the model containing potential tool calls.
 
         Returns
         -------
-        tool_calls : Sequence[Message.ToolCall] | None
-            the list of parsed tool calls in Ollama's format
+        list[Message.ToolCall] | None
+            List of parsed tool calls in Ollama's format, or None if no tool calls found.
+            Each ToolCall contains:
+            - function.name: str - The name of the tool to call
+            - function.arguments: dict - The arguments to pass to the tool
+
+        Raises
+        ------
+        ValueError
+            If tool call tags are found but cannot be parsed, or if no tool calls are
+            found in the response.
+
+        Notes
+        -----
+        - Uses self.tool_call_pattern regex to identify tool call blocks
+        - Expects tool calls in JSON format: {"name": "tool_name", "arguments": {...}}
+        - Automatically updates conversation memory with parsed tool calls or text response
+        - JSON decode errors are logged and the tool call is skipped
         """
         # Look for tool call patterns in the response
         tool_call_matches = re.findall(self.tool_call_pattern, response, re.DOTALL)
@@ -288,16 +342,54 @@ class Ollama:
 
     async def invoke(self, state: Messages = None) -> Messages:
         """
-        Send the request to the ollama server and return the response.
+        Execute a conversation turn with the Ollama model, handling tool calls if present.
 
-        The state messages are updated with the new response.
+        This method sends the conversation state to the Ollama server and processes the
+        response. If the model requests tool calls, they are automatically executed using
+        either LangChain tools or MCP client tools. The method handles both raw and
+        formatted prompt modes, and supports thinking models.
 
         Parameters
-        state : Messages
-            List of message objects in the conversation history.
+        ----------
+        state : Messages, optional
+            Dictionary containing the conversation history with a 'messages' key.
+            Format: {'messages': [Message, ...]}
+            If provided, replaces the current conversation state.
+            Must contain at least one user message.
+            Default is None (uses current state).
 
         Returns
-        Messages : the updated state with new messages.
+        -------
+        Messages
+            The updated state dictionary with new messages appended, including:
+            - Assistant responses (with optional thinking content)
+            - Tool call requests from the assistant
+            - Tool execution results
+
+        Raises
+        ------
+        ValueError
+            If the state doesn't contain at least one user message.
+
+        Notes
+        -----
+        Workflow:
+        1. Validates that state contains at least one user message
+        2. Generates prompt (raw mode with template or formatted mode)
+        3. Sends request to Ollama server with configured options
+        4. Parses response for tool calls (raw mode) or extracts them directly
+        5. Executes tool calls sequentially:
+           - First checks LangChain tools (self.lang_tools)
+           - Falls back to MCP client tools if available
+        6. Appends all results to conversation state
+        7. Returns updated state for next iteration
+
+        The method supports:
+        - Raw mode: Custom Jinja2 templates for prompt formatting
+        - Formatted mode: Ollama's native chat format
+        - Thinking models: Captures and stores reasoning steps
+        - Debug mode: Logs prompts, responses, and tool executions
+        - Multiple tool calls: Processes all tool calls in sequence
         """
         # If a state is provided, use it to replace the current state
         if state is not None:
@@ -444,5 +536,14 @@ class Ollama:
         return self.state
 
     def reset_memory(self) -> None:
-        """Reset the conversation memory."""
+        """
+        Clear all messages from the conversation history.
+
+        This method resets the conversation state by emptying the messages list,
+        allowing for a fresh conversation start without previous context.
+
+        Returns
+        -------
+        None
+        """
         self.state['messages'] = []

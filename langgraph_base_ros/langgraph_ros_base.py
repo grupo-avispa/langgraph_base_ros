@@ -186,6 +186,14 @@ class LangGraphRosBase(Node):
             f'The parameter tool_call_pattern is set to: '
             f'[{self.agent_params["tool_call_pattern"]}]')
 
+        # Declare and retrieve available tools for the agent
+        self.declare_parameter('available_tools', ['delete_behavior_tree'])
+        self.agent_params['available_tools'] = self.get_parameter(
+            'available_tools').get_parameter_value().string_array_value
+        self.get_logger().info(
+            f'The parameter available_tools is set to: '
+            f'[{self.agent_params["available_tools"]}]')
+
         # Declare and retrieve Ollama generation parameters
         self.declare_parameter('raw_mode', False)
         self.agent_params['raw'] = self.get_parameter(
