@@ -4,6 +4,8 @@
 import asyncio
 # JSON import for reading MCP server configurations
 import json
+# time for retry delays
+import time
 # abc for abstract class methods
 from abc import abstractmethod
 # Custom Ollama agent and message utilities
@@ -53,17 +55,6 @@ class LangGraphRosBase(Node):
             asyncio.set_event_loop(self.loop)
             self.get_logger().info('Created new event loop for async operations...')
 
-        # Initialize Ollama agent
-        try:
-            self.loop.run_until_complete(self.initialize_mcp_client(
-                self.mcp_servers,
-                self.agent_params
-            ))
-            self.initialize_ollama_agent(self.agent_params)
-        except Exception as e:
-            self.get_logger().error(f'Failed to initialize Ollama agent: {e}')
-            raise
-
     @abstractmethod
     def build_graph(self) -> None:
         """Initialize and compile the LangGraph workflow."""
@@ -100,14 +91,19 @@ class LangGraphRosBase(Node):
                     agent_params['mcp_client'] = Client(mcp_servers_config)
                     # Connect the client once and keep it open
                     await agent_params['mcp_client'].__aenter__()
+                    # Test connection by pinging the MCP server
+                    await agent_params['mcp_client'].ping()
                     self.get_logger().info('MCP client initialized successfully')
                 except Exception as e:
                     self.get_logger().error(f'Error initializing MCP client: {e}')
                     agent_params['mcp_client'] = None  # type: ignore[assignment]
+                    raise e
             except FileNotFoundError:
                 self.get_logger().error('MCP servers file not found')
+                raise
             except json.JSONDecodeError as e:
                 self.get_logger().error(f'Invalid JSON in MCP servers file: {e}')
+                raise
 
     def initialize_ollama_agent(self, agent_params: dict) -> None:
         """
@@ -122,6 +118,57 @@ class LangGraphRosBase(Node):
             **agent_params,
         )
         self.get_logger().info('Ollama agent initialized successfully')
+
+    def initialize_ollama_with_retries(
+        self,
+        mcp_servers: str,
+        agent_params: dict,
+        max_retries: int = 5,
+        retry_delay: float = 2.0
+    ) -> bool:
+        """
+        Initialize Ollama agent with MCP client using retry logic.
+
+        Attempts to initialize the MCP client and Ollama agent with automatic
+        retries on failure. This provides robustness against transient connection
+        issues or temporary service unavailability.
+
+        Parameters:
+            mcp_servers (str): Path to MCP servers configuration file.
+            agent_params (dict): Dictionary containing agent configuration parameters.
+            max_retries (int): Maximum number of initialization attempts (default: 5).
+            retry_delay (float): Delay in seconds between retry attempts (default: 2.0).
+
+        Returns:
+            bool: True if initialization succeeded, False if max retries exceeded.
+
+        Side Effects:
+            - Initializes self.ollama_agent on success
+            - Modifies agent_params['mcp_client'] with connected MCP client
+            - Logs all initialization attempts and outcomes
+            - Blocks execution during retry delays
+        """
+        connection_counter = 0
+        while connection_counter < max_retries:
+            self.get_logger().info(
+                f'Attempting to initialize Ollama agent '
+                f'(try {connection_counter + 1}/{max_retries})...'
+            )
+            try:
+                self.loop.run_until_complete(
+                    self.initialize_mcp_client(mcp_servers, agent_params)
+                )
+                self.initialize_ollama_agent(agent_params)
+                return True
+            except Exception as e:
+                connection_counter += 1
+                if connection_counter < max_retries:
+                    time.sleep(retry_delay)
+
+        self.get_logger().error(
+            f'Exceeded maximum retries ({max_retries}) to initialize Ollama agent.'
+        )
+        return False
 
     def get_params(self) -> None:
         """

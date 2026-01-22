@@ -493,12 +493,21 @@ class Ollama:
                             break
                 # If not found, check if MCP client is available to call the tool
                 if not tool_call_done and self.mcp_client is not None:
-                    async with self.mcp_client:
-                        # Call MCP tool with name and arguments from tool_call.function
-                        tool_response = await self.mcp_client.call_tool(
-                            tool_call.function.name,
-                            arguments=tool_call.function.arguments
-                        )
+                    try:
+                        async with self.mcp_client:
+                            # Call MCP tool with name and arguments from tool_call.function
+                            tool_response = await self.mcp_client.call_tool(
+                                tool_call.function.name,
+                                arguments=tool_call.function.arguments
+                            )
+                            tool_call_done = True
+                    except Exception as mcp_error:
+                        # Handle any error from MCP tool execution
+                        error_msg = f"Error executing MCP tool {tool_call.function.name}: {str(mcp_error)}"
+                        if self.debug:
+                            console.print(f'[red]{error_msg}[/red]')
+                        # Create error response to add to conversation
+                        tool_response = error_msg
                         tool_call_done = True
                 # If tool call was successful, add the response to the conversation memory
                 if tool_call_done:
@@ -510,8 +519,17 @@ class Ollama:
                             expand=False
                         ))
                     # Add observation to conversation memory
-                    content = tool_response.content[0].text \
-                        if hasattr(tool_response, 'content') else str(tool_response)
+                    # Handle different response formats (MCP response, error object, or string)
+                    if isinstance(tool_response, str):
+                        content = tool_response
+                    elif hasattr(tool_response, 'content'):
+                        if isinstance(tool_response.content, list):
+                            content = tool_response.content[0].text
+                        else:
+                            content = tool_response.content
+                    else:
+                        content = str(tool_response)
+                    
                     self.state['messages'].append(
                         Message(
                             role='tool',
