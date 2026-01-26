@@ -166,8 +166,16 @@ class LangGraphRosBase(Node):
                     time.sleep(retry_delay)
 
         self.get_logger().error(
-            f'Exceeded maximum retries ({max_retries}) to initialize Ollama agent.'
+            f'Exceeded maximum retries ({max_retries}) to initialize Ollama agent, '
+            'initalizing without MCP client...'
         )
+        agent_params['mcp_client'] = None  # type: ignore[assignment]
+        try:
+            self.initialize_ollama_agent(agent_params)
+            return True
+        except Exception as e:
+            self.get_logger().error(f'Failed to initialize Ollama agent: {e}')
+            raise
         return False
 
     def get_params(self) -> None:
