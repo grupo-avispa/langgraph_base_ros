@@ -4,6 +4,7 @@ import logging
 import inspect
 from abc import ABC, abstractmethod
 from langchain_core.tools import StructuredTool
+from langgraph_base_ros.chat_template_render import Messages
 from langgraph_base_ros.ollama_utils import Ollama
 
 
@@ -142,6 +143,36 @@ class LangGraphBase(ABC):
                     'inputSchema': method.args_schema,
                     'tool_object': method
                 })
+
+    def _track_step(self, state: Messages) -> tuple[bool, bool]:
+        """
+        Track step count and detect tool calls in conversation state.
+
+        Common bookkeeping shared by agent and supervisor routing methods.
+        Increments the step counter, checks whether there is a tool call
+        in the last message, and detects max_steps violations. Also updates
+        ``messages_count`` for logging.
+
+        Parameters
+        ----------
+        state : Messages
+            Current conversation state with message history.
+
+        Returns
+        -------
+        tuple[bool, bool]
+            A tuple of (has_tool_call, max_steps_reached).
+            - has_tool_call: True if last message role is 'tool'.
+            - max_steps_reached: True if steps exceed max_steps.
+        """
+        self.steps += 1
+        self.messages_count = len(state.get('messages', []))
+        has_tool_call = bool(
+            state.get('messages')
+            and state['messages'][-1].get('role') == 'tool'
+        )
+        max_steps_reached = self.steps > self.max_steps
+        return has_tool_call, max_steps_reached
 
     @abstractmethod
     async def make_graph(self):
