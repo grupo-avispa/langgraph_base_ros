@@ -3,8 +3,11 @@
 import logging
 import inspect
 from abc import ABC, abstractmethod
+from typing import Any
+
+from jinja2 import Template
 from langchain_core.tools import StructuredTool
-from langgraph_base_ros.chat_template_render import Messages
+from langgraph_base_ros.chat_template_render import Message, Messages
 from langgraph_base_ros.ollama_utils import Ollama
 
 
@@ -122,6 +125,24 @@ class LangGraphBase(ABC):
             self.sys_prompt = 'You are a helpful assistant designed to perform specific tasks.'
         return self.sys_prompt
 
+    def _render_system_prompt(self, **kwargs: Any) -> Message:
+        """
+        Render the Jinja2 system prompt template and return a system ``Message``.
+
+        Parameters
+        ----------
+        **kwargs : Any
+            Template variables forwarded to ``jinja2.Template.render()``.
+
+        Returns
+        -------
+        Message
+            A ``Message`` with ``role='system'`` and the rendered content.
+        """
+        template = Template(self.sys_prompt)
+        rendered = template.render(**kwargs)
+        return Message(role='system', content=rendered)
+
     def _generate_tools_list(self):
         """
         Generate a list of available tools for the agent.
@@ -148,7 +169,7 @@ class LangGraphBase(ABC):
         """
         Track step count and detect tool calls in conversation state.
 
-        Common bookkeeping shared by agent and supervisor routing methods.
+        Common bookkeeping for routing methods.
         Increments the step counter, checks whether there is a tool call
         in the last message, and detects max_steps violations. Also updates
         ``messages_count`` for logging.
@@ -168,8 +189,7 @@ class LangGraphBase(ABC):
         self.steps += 1
         self.messages_count = len(state.get('messages', []))
         has_tool_call = bool(
-            state.get('messages')
-            and state['messages'][-1].get('role') == 'tool'
+            state.get('messages') and state['messages'][-1].get('role') == 'tool'
         )
         max_steps_reached = self.steps > self.max_steps
         return has_tool_call, max_steps_reached
