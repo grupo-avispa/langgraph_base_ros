@@ -1,7 +1,8 @@
 import json
 import re
-from typing import Optional
-from ollama import generate, chat, Message
+from typing import Optional, Union
+from ollama import generate, chat, Message, ChatResponse, GenerateResponse
+from ollama import RequestError
 from fastmcp import Client
 from rich.console import Console
 from rich.text import Text
@@ -10,6 +11,7 @@ from rich.panel import Panel
 from langgraph_base_ros.chat_template_render import TemplateRenderer, Messages
 
 console = Console()
+
 
 class Ollama:
     """
@@ -58,7 +60,8 @@ class Ollama:
             The MCP (Model Context Protocol) client instance for executing tool calls
             from MCP servers (default: None).
         think : bool, optional
-            Enable thinking mode for models that support reasoning before responding (default: False).
+            Enable thinking mode for models that support reasoning before responding
+            (default: False).
         raw : bool, optional
             If True, no automatic formatting is applied to prompts. Requires template_type
             and template_file to be specified (default: False).
@@ -117,7 +120,7 @@ class Ollama:
             self.tool_call_pattern = r'<tool_call>(.*?)</tool_call>'
             raise ValueError(
                 'Raw mode is true but no tool call pattern is provided. '
-                'A default pattern will be used but probably won\'t match your template.')
+                "A default pattern will be used but probably won\'t match your template.")
         if raw and template_type != '':
             self.renderer = TemplateRenderer(
                 template_type=template_type,
@@ -160,15 +163,16 @@ class Ollama:
         self.lang_tools = lang_tools
         for tool in self.lang_tools:
             try:
-                if not all(k in tool for k in ("name", "description", "inputSchema", "tool_object")):
+                required_keys = ('name', 'description', 'inputSchema', 'tool_object')
+                if not all(k in tool for k in required_keys):
                     raise KeyError(
-                        "One or more required keys are missing in the langchain tool dictionary.")
+                        'One or more required keys are missing in the langchain tool dictionary.')
                 self.tools.append({
                     'type': 'function',
                     'function': {
-                        'name': tool["name"],
-                        'description': tool["description"],
-                        'parameters': tool["inputSchema"]
+                        'name': tool['name'],
+                        'description': tool['description'],
+                        'parameters': tool['inputSchema']
                     }
                 })
             except Exception as e:
@@ -204,6 +208,7 @@ class Ollama:
     ) -> Message:
         """
         Create a message object using Ollama's native Message class.
+
         Only assigns optional attributes when they are provided and not None.
 
         Parameters
@@ -225,7 +230,7 @@ class Ollama:
             The created message object with only the provided attributes
         """
         # Create base message with only role
-        kwargs = {'role': role}
+        kwargs: dict = {'role': role}
 
         # Add optional attributes only if provided
         if content is not None:
@@ -312,7 +317,7 @@ class Ollama:
             # Check if any tool calls were successfully parsed
             if tool_calls_list:
                 # Append the tool calls to the conversation memory
-                self.state["messages"].append(
+                self.state['messages'].append(
                     Message(
                         role='assistant',
                         tool_calls=tool_calls_list
@@ -323,7 +328,7 @@ class Ollama:
                 return tool_calls_list
             else:
                 # Append the response without tool call to the conversation memory
-                self.state["messages"].append(
+                self.state['messages'].append(
                     Message(
                         role='assistant',
                         content=response
@@ -332,7 +337,7 @@ class Ollama:
                 raise ValueError('Found tool call tags but failed to parse them.')
         else:
             # Append the response without tool call to the conversation memory
-            self.state["messages"].append(
+            self.state['messages'].append(
                 Message(
                     role='assistant',
                     content=response
@@ -340,7 +345,7 @@ class Ollama:
             )
             raise ValueError('No tool call found in the model response.')
 
-    async def invoke(self, state: Messages = None) -> Messages:
+    async def invoke(self, state: Optional[Messages] = None) -> Messages:
         """
         Execute a conversation turn with the Ollama model, handling tool calls if present.
 
@@ -404,6 +409,7 @@ class Ollama:
                 'The state must contain at least one user message.')
 
         # Prepare the prompt
+        response: Union[GenerateResponse, ChatResponse]
         if self.raw:
             prompt = self.renderer.render(
                 state=self.state,
@@ -417,13 +423,23 @@ class Ollama:
                     expand=False
                 ))
 
-            response = generate(
-                model=self.model,
-                prompt=prompt,
-                stream=False,
-                raw=self.raw,
-                options=self.options
-            )
+            try:
+                response = generate(
+                    model=self.model,
+                    prompt=prompt,
+                    stream=False,
+                    raw=self.raw,
+                    options=self.options
+                )
+            except RequestError as e:
+                error_msg = f'Error communicating with Ollama: {str(e)}'
+                console.print(f'[red]{error_msg}[/red]')
+                raise ValueError(error_msg) from e
+            except Exception as e:
+                error_msg = f'Unexpected error with model "{self.model}": {str(e)}'
+                console.print(f'[red]{error_msg}[/red]')
+                raise ValueError(error_msg) from e
+
             if self.debug:
                 console.print(Panel(
                     response['response'],
@@ -439,14 +455,23 @@ class Ollama:
                         expand=False
                     ))
         else:
-            response = chat(
-                model=self.model,
-                stream=False,
-                messages=self.state['messages'],
-                think=self.think,
-                tools=self.tools,
-                options=self.options,
-            )
+            try:
+                response = chat(
+                    model=self.model,
+                    stream=False,
+                    messages=self.state['messages'],
+                    think=self.think,
+                    tools=self.tools,
+                    options=self.options,
+                )
+            except RequestError as e:
+                error_msg = f'Error communicating with Ollama: {str(e)}'
+                console.print(f'[red]{error_msg}[/red]')
+                raise ValueError(error_msg) from e
+            except Exception as e:
+                error_msg = f'Unexpected error with model "{self.model}": {str(e)}'
+                console.print(f'[red]{error_msg}[/red]')
+                raise ValueError(error_msg) from e
         # Check if tool calls are present in the response
         try:
             if self.raw:
@@ -455,18 +480,31 @@ class Ollama:
             else:
                 # Add the assistant message with tool calls to messages
                 # Only include attributes that are present in the response
-                msg_kwargs = {'role': 'assistant'}
+                msg_kwargs: dict = {'role': 'assistant'}
 
-                if hasattr(response.message, 'content') and response.message.content is not None:
-                    msg_kwargs['content'] = response.message.content
-                if hasattr(response.message, 'thinking') and response.message.thinking is not None:
-                    msg_kwargs['thinking'] = response.message.thinking
-                if hasattr(response.message, 'tool_calls') and response.message.tool_calls is not None:
-                    msg_kwargs['tool_calls'] = response.message.tool_calls
+                if isinstance(response, ChatResponse):
+                    if (hasattr(response.message, 'content')):
+                        if response.message.content is not None:
+                            msg_kwargs['content'] = response.message.content
+                    if (hasattr(response.message, 'thinking')):
+                        if response.message.thinking is not None:
+                            msg_kwargs['thinking'] = response.message.thinking
+                    if (hasattr(response.message, 'tool_calls')):
+                        if response.message.tool_calls is not None:
+                            msg_kwargs['tool_calls'] = response.message.tool_calls
 
-                self.state["messages"].append(Message(**msg_kwargs))
-                tool_calls = response.message.tool_calls if hasattr(
-                    response.message, 'tool_calls') else None
+                    self.state['messages'].append(Message(**msg_kwargs))
+                    tool_calls = response.message.tool_calls if hasattr(
+                        response.message, 'tool_calls') else None
+                else:
+                    # GenerateResponse case - add response text as content
+                    if hasattr(response, 'response') and response.response is not None:
+                        msg_kwargs['content'] = response.response
+                    if hasattr(response, 'thinking') and response.thinking is not None:
+                        msg_kwargs['thinking'] = response.thinking
+
+                    self.state['messages'].append(Message(**msg_kwargs))
+                    tool_calls = None
 
             if not tool_calls:
                 return self.state
@@ -503,7 +541,10 @@ class Ollama:
                             tool_call_done = True
                     except Exception as mcp_error:
                         # Handle any error from MCP tool execution
-                        error_msg = f"Error executing MCP tool {tool_call.function.name}: {str(mcp_error)}"
+                        error_msg = (
+                            f'Error executing MCP tool {tool_call.function.name}: '
+                            f'{str(mcp_error)}'
+                        )
                         if self.debug:
                             console.print(f'[red]{error_msg}[/red]')
                         # Create error response to add to conversation
@@ -512,9 +553,10 @@ class Ollama:
                 # If tool call was successful, add the response to the conversation memory
                 if tool_call_done:
                     if self.debug:
+                        tool_name = tool_call.function.name
                         console.print(Panel(
                             str(tool_response),
-                            title=f'[green bold]TOOL RESPONSE: {tool_call.function.name}[/green bold]',
+                            title=f'[green bold]TOOL RESPONSE: {tool_name}[/green bold]',
                             border_style='green',
                             expand=False
                         ))
@@ -529,7 +571,7 @@ class Ollama:
                             content = tool_response.content
                     else:
                         content = str(tool_response)
-                    
+
                     self.state['messages'].append(
                         Message(
                             role='tool',
@@ -537,13 +579,14 @@ class Ollama:
                         )
                     )
                 else:
+                    tool_name = tool_call.function.name
                     if self.debug:
                         console.print(
-                            f'[red]Tool {tool_call.function.name} not found or failed to execute[/red]')
+                            f'[red]Tool {tool_name} not found or failed to execute[/red]')
                     self.state['messages'].append(
                         Message(
                             role='tool',
-                            content=f"Tool {tool_call.function.name} not found or failed to execute"
+                            content=f'Tool {tool_name} not found or failed to execute'
                         )
                     )
         except (ValueError, AttributeError) as e:
