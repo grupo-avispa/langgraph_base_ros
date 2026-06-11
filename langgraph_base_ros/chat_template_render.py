@@ -1,4 +1,4 @@
-from typing import TypedDict, Optional
+from typing import TypedDict, Optional, Any
 from jinja2 import Template
 from ollama import Message
 
@@ -55,6 +55,7 @@ from ollama import Message
 #   Tools calls to be made by the model.
 #   """
 
+
 class Messages(TypedDict):
     """
     Class to hold conversation messages for LangGraph workflow.
@@ -65,58 +66,62 @@ class Messages(TypedDict):
 
     messages: list[Message]
 
+
 class TemplateRenderer:
     """
     Renders chat prompts using Jinja2 templates for different LLMs.
-    Attributes:
+
+    Attributes
+    ----------
         template_type (str): Type of the template (e.g., 'mistral', 'qwen3', 'llama').
         template_file (str): Path to the Jinja2 template file.
         template (Template): Jinja2 template object.
         render_params (dict): Parameters for rendering the template.
-    Methods:
+
+    Methods
+    -------
         render(state: Messages, tools: Optional[list] = None) -> str:
             Renders the template with the given state and tools.
+
     """
-    
-    def __init__(self, 
-                 template_type: str,
-                 template_file: str ,
-                 think: bool = False):
+
+    def __init__(self, template_type: str, template_file: str, think: bool = False):
         self.template_type = template_type
         self.template_file = template_file
         self.available_templates = {
-            "mistral": {
-                "template_path": self.template_file,
-                "eos_token": "</s>",
-                "bos_token": "<s>",
-                "pad_token": ""
+            'mistral': {
+                'template_path': self.template_file,
+                'eos_token': '</s>',
+                'bos_token': '<s>',
+                'pad_token': ''
             },
-            "qwen3": {
-                "template_path": self.template_file,
-                "eos_token": "<|im_end|>",
-                "bos_token": "",
-                "pad_token": "<|endoftext|>"
+            'qwen3': {
+                'template_path': self.template_file,
+                'eos_token': '<|im_end|>',
+                'bos_token': '',
+                'pad_token': '<|endoftext|>'
             },
-            "llama": {
-                "template_path": self.template_file,
-                "eos_token": "<|end_of_text|>",
-                "bos_token": "<|begin_of_text|>",
-                "pad_token": "<|end_of_text|>"
+            'llama': {
+                'template_path': self.template_file,
+                'eos_token': '<|end_of_text|>',
+                'bos_token': '<|begin_of_text|>',
+                'pad_token': '<|end_of_text|>'
             }
         }
         if template_type not in self.available_templates:
             raise ValueError(
-                f"Template type '{template_type}' is not supported." + 
-                f" Supported types are: {list(self.available_templates.keys())}")
+                f'Template type \"{template_type}\" is not supported. '
+                f'Supported types are: {list(self.available_templates.keys())}')
 
         try:
-            with open(self.available_templates[template_type]["template_path"], 'r') as f:
+            with open(self.available_templates[template_type]['template_path'], 'r') as f:
                 template_content = f.read()
                 self.template = Template(template_content)
                 self.template.globals['raise_exception'] = self._raise_exception
         except FileNotFoundError:
             raise FileNotFoundError(
-                f"Template file not found at path: {self.available_templates[template_type]['template_path']}")
+                'Template file not found at path: '
+                f'{self.available_templates[template_type]["template_path"]}')
 
         # Generate render params dict
         self.render_params = {
@@ -124,20 +129,18 @@ class TemplateRenderer:
             'tools': [],
             'add_generation_prompt': True,
             'enable_thinking': think,
-            'bos_token': self.available_templates[template_type]["bos_token"],
-            'eos_token': self.available_templates[template_type]["eos_token"],
-            'pad_token': self.available_templates[template_type]["pad_token"]
+            'bos_token': self.available_templates[template_type]['bos_token'],
+            'eos_token': self.available_templates[template_type]['eos_token'],
+            'pad_token': self.available_templates[template_type]['pad_token']
         }
-        
 
-    def _raise_exception(message: str):
-        """Helper function for Jinja2 template to raise exceptions."""
+    def _raise_exception(self, message: str) -> None:
+        """Help function for Jinja2 template to raise exceptions."""
         raise ValueError(message)
-    
-    def render(self, state: Messages, 
-               tools: Optional[list] = None) -> str:
+
+    def render(self, state: Messages, tools: Optional[list[Any]] = None) -> str:
         # Populate render params
-        self.render_params["messages"] = state['messages']
-        self.render_params["tools"] = tools if tools is not None else []
+        self.render_params['messages'] = state['messages']
+        self.render_params['tools'] = tools if tools is not None else []
 
         return self.template.render(**self.render_params)
