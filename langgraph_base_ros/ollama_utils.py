@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from typing import Optional, Union
 from ollama import generate, chat, Message, ChatResponse, GenerateResponse
 from ollama import RequestError
@@ -440,6 +441,9 @@ class Ollama:
                 console.print(f'[red]{error_msg}[/red]')
                 raise ValueError(error_msg) from e
 
+            inference_time = (response.eval_duration or 0) / 1e9
+            generated_tokens = response.eval_count or 0
+
             if self.debug:
                 console.print(Panel(
                     response['response'],
@@ -472,6 +476,10 @@ class Ollama:
                 error_msg = f'Unexpected error with model "{self.model}": {str(e)}'
                 console.print(f'[red]{error_msg}[/red]')
                 raise ValueError(error_msg) from e
+
+            inference_time = (response.eval_duration or 0) / 1e9
+            generated_tokens = response.eval_count or 0
+
         # Check if tool calls are present in the response
         try:
             if self.raw:
@@ -514,8 +522,13 @@ class Ollama:
 
             for tool_call in tool_calls:
                 if self.debug:
-                    console.print(f'[cyan]Executing tool: {tool_call.function.name}[/cyan]')
-                    console.print(f'[cyan]Arguments: {tool_call.function.arguments}[/cyan]')
+                    console.print(Panel(
+                        f'[bold]Tool:[/bold] {tool_call.function.name}\n'
+                        f'[bold]Arguments:[/bold] {json.dumps(tool_call.function.arguments)}',
+                        title='[cyan bold]EXECUTING TOOL CALL[/cyan bold]',
+                        border_style='cyan',
+                        expand=False
+                    ))
 
                 tool_call_done = False
 
@@ -530,14 +543,17 @@ class Ollama:
                             tool_call_done = True
                             break
                 # If not found, check if MCP client is available to call the tool
+                mcp_execution_time = 0.0
                 if not tool_call_done and self.mcp_client is not None:
                     try:
                         async with self.mcp_client:
                             # Call MCP tool with name and arguments from tool_call.function
+                            mcp_start = time.time()
                             tool_response = await self.mcp_client.call_tool(
                                 tool_call.function.name,
                                 arguments=tool_call.function.arguments
                             )
+                            mcp_execution_time = time.time() - mcp_start
                             tool_call_done = True
                     except Exception as mcp_error:
                         # Handle any error from MCP tool execution
@@ -558,6 +574,20 @@ class Ollama:
                             str(tool_response),
                             title=f'[green bold]TOOL RESPONSE: {tool_name}[/green bold]',
                             border_style='green',
+                            expand=False
+                        ))
+                        console.print(Panel(
+                            f'[bold]Tool Name:[/bold] {tool_call.function.name}\n'
+                            f'[bold]Tool Arguments:[/bold] '
+                            f'{json.dumps(tool_call.function.arguments)}\n'
+                            f'[bold]MCP Execution Time:[/bold] '
+                            f'[yellow]{mcp_execution_time:.4f}s[/yellow]\n'
+                            f'[bold]Inference Time:[/bold] '
+                            f'[yellow]{inference_time:.4f}s[/yellow]\n'
+                            f'[bold]Generated Tokens:[/bold] '
+                            f'[yellow]{generated_tokens}[/yellow]',
+                            title='[magenta bold]TIMING STATS[/magenta bold]',
+                            border_style='magenta',
                             expand=False
                         ))
                     # Add observation to conversation memory
