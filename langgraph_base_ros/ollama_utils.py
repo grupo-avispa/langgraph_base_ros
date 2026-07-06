@@ -119,15 +119,19 @@ class Ollama:
                 'formatting. The jinja template only applies in raw mode.')
         if raw and self.tool_call_pattern == '':
             self.tool_call_pattern = r'<tool_call>(.*?)</tool_call>'
-            raise ValueError(
-                'Raw mode is true but no tool call pattern is provided. '
-                "A default pattern will be used but probably won\'t match your template.")
+            console.print(
+                '[yellow]Raw mode is true but no tool call pattern is provided. '
+                'A default pattern will be used but probably won\'t match your template.'
+                '[/yellow]')
         if raw and template_type != '':
             self.renderer = TemplateRenderer(
                 template_type=template_type,
                 template_file=template_file,
                 think=think
             )
+
+        # Conversation memory, seeded with an empty system message
+        self.state: Messages = {'messages': [self.create_message(role='system')]}
 
     async def retrieve_tools(self, lang_tools: list = []):
         """

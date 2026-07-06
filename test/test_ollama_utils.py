@@ -2,7 +2,8 @@
 # tests/test_ollama.py
 import pytest
 import json
-from langgraph_base_ros.ollama_utils import Ollama, Messages, Message
+from langgraph_base_ros.ollama_utils import (
+    Ollama, Messages, Message, ChatResponse, GenerateResponse)
 import ollama
 from ollama import generate
 
@@ -14,7 +15,7 @@ def ollama_fixture(tmp_path):
     # Create a temporary fake Jinja template
     template = tmp_path / "template.jinja"
     template.write_text("{{ messages }}")
-    return Ollama(raw=True, jinja_template_path=str(template), debug=True)
+    return Ollama(raw=True, template_type="qwen3", template_file=str(template), debug=True)
 
 
 # --------------------------------------------------
@@ -37,12 +38,12 @@ def test_init_with_template(ollama_fixture):
 # TEST 2: create_message
 # --------------------------------------------------
 def test_create_message_fields(ollama_fixture):
-    """create_message should return a valid Message dict with all expected fields."""
+    """create_message should only set the fields explicitly provided."""
     msg = ollama_fixture.create_message(role="user", content="Hello world")
     assert msg["role"] == "user"
     assert msg["content"] == "Hello world"
-    assert msg["reasoning_content"] == ""
-    assert isinstance(msg["tool_calls"], list)
+    assert msg.thinking is None
+    assert msg.tool_calls is None
 
 
 # --------------------------------------------------
@@ -56,8 +57,8 @@ def test_parse_tool_calls_valid(ollama_fixture):
     </tool_call>
     """
     result = ollama_fixture.parse_tool_calls(response)
-    assert result[0]["tool_name"] == "turn_on_light"
-    assert result[0]["tool_arguments"] == {"room": "kitchen"}
+    assert result[0].function.name == "turn_on_light"
+    assert result[0].function.arguments == {"room": "kitchen"}
     # The assistant message should be added to memory
     assert ollama_fixture.state["messages"][-1]["role"] == "assistant"
     # The tool_calls field should be a non-empty list
@@ -81,7 +82,7 @@ def test_parse_tool_calls_no_json(ollama_fixture):
     with pytest.raises(ValueError, match="Found tool call tags but failed to parse them."):
         ollama_fixture.parse_tool_calls(bad_json)
 
-def test_parse_tool_calls_invalid_json(ollama_fixture):
+def test_parse_tool_calls_invalid_schema(ollama_fixture):
     """If JSON args inside <tool_call> is invalid, ValueError should be raised."""
     response = """
     <tool_call>
@@ -104,33 +105,40 @@ def test_reset_memory_clears_messages(ollama_fixture):
 # --------------------------------------------------
 # TEST 5: invoke (mocked)
 # --------------------------------------------------
+TOOL_CALL_TEXT = '<tool_call>{"name":"sum","arguments":{"a":1,"b":2}}</tool_call>'
+
+
 @pytest.mark.asyncio
 async def test_invoke_raw_with_mocked_generate(monkeypatch, ollama_fixture):
     """invoke should call generate() and parse tool calls correctly when mocked."""
     # Fake generate() function to avoid real API calls
     def fake_generate(**kwargs):
-        return {"response": '<tool_call>{"name":"sum","arguments":{"a":1,"b":2}}</tool_call>'}
+        return GenerateResponse(response=TOOL_CALL_TEXT)
 
     # Replace ollama.generate with our fake function
     monkeypatch.setattr(ollama, "generate", fake_generate)
 
-    result = await ollama_fixture.invoke(user_query="What is 1+2?")
+    ollama_fixture.state["messages"].append(
+        ollama_fixture.create_message(role="user", content="What is 1+2?"))
+
+    result = await ollama_fixture.invoke()
     messages = result["messages"]
     assert any(m["role"] == "assistant" for m in messages)
 
 @pytest.mark.asyncio
-async def test_invoke_with_mocked_generate(monkeypatch):
-    """invoke should call generate() and parse tool calls correctly when mocked."""
-    # Fake generate() function to avoid real API calls
-    def fake_generate(**kwargs):
-        return {"response": '<tool_call>{"name":"sum","arguments":{"a":1,"b":2}}</tool_call>'}
-
-    # Replace ollama.generate with our fake function
-    monkeypatch.setattr(ollama, "generate", fake_generate)
+async def test_invoke_with_mocked_generate(mocker):
+    """invoke should call chat() and parse tool calls correctly when mocked."""
+    tool_call = Message.ToolCall(
+        function=Message.ToolCall.Function(name="sum", arguments={"a": 1, "b": 2}))
+    mocker.patch(
+        "langgraph_base_ros.ollama_utils.chat",
+        return_value=ChatResponse(message=Message(role="assistant", tool_calls=[tool_call])))
 
     ollama_not_raw = Ollama(raw=False, debug=True)
+    ollama_not_raw.state["messages"].append(
+        ollama_not_raw.create_message(role="user", content="What is 1+2?"))
 
-    result = await ollama_not_raw.invoke(user_query="What is 1+2?")
+    result = await ollama_not_raw.invoke()
     messages = result["messages"]
     assert any(m["role"] == "assistant" for m in messages)
 
@@ -139,13 +147,13 @@ async def test_invoke_state_query_mocked_generate(monkeypatch, ollama_fixture):
     """invoke should call generate() and parse tool calls correctly when mocked."""
     # Fake generate() function to avoid real API calls
     def fake_generate(**kwargs):
-        return {"response": '<tool_call>{"name":"sum","arguments":{"a":1,"b":2}}</tool_call>'}
+        return GenerateResponse(response=TOOL_CALL_TEXT)
 
     # Replace ollama.generate with our fake function
     monkeypatch.setattr(ollama, "generate", fake_generate)
     state_msg = Message(role="user", content="Previous message")
     state = Messages(messages=[state_msg])
-    result = await ollama_fixture.invoke(user_query="What is 1+2?", state=state)
+    result = await ollama_fixture.invoke(state=state)
     messages = result["messages"]
     assert any(m["role"] == "assistant" for m in messages)
 
@@ -154,10 +162,10 @@ async def test_invoke_no_state_mocked_generate(monkeypatch, ollama_fixture):
     """invoke should call generate() and parse tool calls correctly when mocked."""
     # Fake generate() function to avoid real API calls
     def fake_generate(**kwargs):
-        return {"response": '<tool_call>{"name":"sum","arguments":{"a":1,"b":2}}</tool_call>'}
+        return GenerateResponse(response=TOOL_CALL_TEXT)
 
     # Replace ollama.generate with our fake function
     monkeypatch.setattr(ollama, "generate", fake_generate)
-    
+
     with pytest.raises(ValueError):
-        result = await ollama_fixture.invoke()
+        await ollama_fixture.invoke()

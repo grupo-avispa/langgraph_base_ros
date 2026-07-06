@@ -91,15 +91,15 @@ class TestLangGraphBase:
     def test_log_with_ros_logger(self, mocker, ollama_fixture):
         logger = mocker.Mock()
         graph_base = ConcreteLangGraphBase(logger=logger, ollama_agent=ollama_fixture)
-        
-        graph_base._log("test message")
+
+        graph_base._log_info("test message")
         logger.info.assert_called_once_with("test message")
-    
+
     def test_log_without_ros_logger(self, mocker, ollama_fixture):
         mock_logging = mocker.patch("langgraph_base_ros.langgraph_base.logging")
         graph_base = ConcreteLangGraphBase(ollama_agent=ollama_fixture)
-        
-        graph_base._log("test message")
+
+        graph_base._log_info("test message")
         mock_logging.info.assert_called_once_with("test message")
     
     @pytest.mark.asyncio
@@ -139,55 +139,51 @@ class TestLangGraphRosBase:
         node = ConcreteLangGraphRosBase()
 
         assert node.service_name == "test_value"
-        assert node.raw_mode is True
-        assert node.temperature == 0.5
-    
+        assert node.agent_params["raw"] is True
+        assert node.agent_params["temperature"] == 0.5
+
+
+    def test_initialize_ollama_agent_creates_agent(self, mocker, manual_node):
+        """initialize_ollama_agent should build the Ollama instance from agent_params."""
+        mocker.patch.object(manual_node, "get_logger", return_value=mocker.Mock())
+        mock_ollama_cls = mocker.patch("langgraph_base_ros.langgraph_ros_base.Ollama")
+
+        agent_params = {"model": "qwen3:0.6b"}
+        manual_node.initialize_ollama_agent(agent_params)
+
+        mock_ollama_cls.assert_called_once_with(**agent_params)
+        assert manual_node.ollama_agent == mock_ollama_cls.return_value
 
     @pytest.mark.asyncio
-    async def test_initialize_ollama_agent_success(self, mocker, manual_node, mock_mcp_client):
-        # Mock file open
+    async def test_initialize_mcp_client_success(self, mocker, manual_node, mock_mcp_client):
+        """initialize_mcp_client should connect the MCP client and store it in agent_params."""
         mocker.patch("builtins.open", mocker.mock_open(read_data='{"servers": {}}'))
         mocker.patch("json.load", return_value={"servers": {}})
-
-        # Mock MCP Client
         mocker.patch("langgraph_base_ros.langgraph_ros_base.Client", return_value=mock_mcp_client)
-
-        # Patch misc methods
-        mocker.patch("langgraph_base_ros.langgraph_ros_base.asyncio.new_event_loop")
-        mocker.patch.object(ConcreteLangGraphRosBase, "get_params")
-        mocker.patch.object(ConcreteLangGraphRosBase, "get_logger", return_value=mocker.Mock())
-
-        mock_ollama = mocker.patch("langgraph_base_ros.langgraph_ros_base.Ollama")
-
-        await manual_node.initialize_ollama_agent()
-        assert mock_ollama.called
-    
-
-    @pytest.mark.asyncio
-    async def test_initialize_ollama_agent_file_not_found(self, mocker, manual_node):
-        mocker.patch("builtins.open", side_effect=FileNotFoundError)
-        mocker.patch("langgraph_base_ros.langgraph_ros_base.asyncio.new_event_loop")
-        mocker.patch.object(ConcreteLangGraphRosBase, "get_params")
-
         mocker.patch.object(manual_node, "get_logger", return_value=mocker.Mock())
 
-        await manual_node.initialize_ollama_agent()
+        agent_params: dict = {}
+        await manual_node.initialize_mcp_client("mcp.json", agent_params)
 
-        assert manual_node.tools == []
-        assert manual_node.mcp_client is None
-        assert manual_node.ollama_agent is not None
+        assert agent_params["mcp_client"] == mock_mcp_client
+        mock_mcp_client.__aenter__.assert_awaited_once()
+        mock_mcp_client.ping.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_initialize_ollama_agent_invalid_json(self, mocker, manual_node):
+    async def test_initialize_mcp_client_file_not_found(self, mocker, manual_node):
+        """initialize_mcp_client should propagate FileNotFoundError for a missing config file."""
+        mocker.patch("builtins.open", side_effect=FileNotFoundError)
+        mocker.patch.object(manual_node, "get_logger", return_value=mocker.Mock())
+
+        with pytest.raises(FileNotFoundError):
+            await manual_node.initialize_mcp_client("missing.json", {})
+
+    @pytest.mark.asyncio
+    async def test_initialize_mcp_client_invalid_json(self, mocker, manual_node):
+        """initialize_mcp_client should propagate JSONDecodeError for an invalid config file."""
         mocker.patch("builtins.open", mocker.mock_open(read_data="invalid json"))
         mocker.patch("json.load", side_effect=json.JSONDecodeError("err", "doc", 0))
-        mocker.patch("langgraph_base_ros.langgraph_ros_base.asyncio.new_event_loop")
-        mocker.patch.object(ConcreteLangGraphRosBase, "get_params")
-
         mocker.patch.object(manual_node, "get_logger", return_value=mocker.Mock())
 
-        await manual_node.initialize_ollama_agent()
-
-        assert manual_node.tools == []
-        assert manual_node.mcp_client is None
-        assert manual_node.ollama_agent is not None
+        with pytest.raises(json.JSONDecodeError):
+            await manual_node.initialize_mcp_client("mcp.json", {})

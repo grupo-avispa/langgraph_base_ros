@@ -26,6 +26,8 @@ setup(
     extras_require={
         'test': [
             'pytest',
+            'pytest-mock',
+            'pytest-asyncio',
         ],
     },
     # entry_points={
