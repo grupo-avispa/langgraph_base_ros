@@ -115,8 +115,9 @@ async def test_invoke_raw_with_mocked_generate(monkeypatch, ollama_fixture):
     def fake_generate(**kwargs):
         return GenerateResponse(response=TOOL_CALL_TEXT)
 
-    # Replace ollama.generate with our fake function
-    monkeypatch.setattr(ollama, "generate", fake_generate)
+    # ollama_utils imports `generate` directly (`from ollama import generate`), so the
+    # name to patch is the one bound in that module, not the origin `ollama` module.
+    monkeypatch.setattr("langgraph_base_ros.ollama_utils.generate", fake_generate)
 
     ollama_fixture.state["messages"].append(
         ollama_fixture.create_message(role="user", content="What is 1+2?"))
@@ -149,8 +150,7 @@ async def test_invoke_state_query_mocked_generate(monkeypatch, ollama_fixture):
     def fake_generate(**kwargs):
         return GenerateResponse(response=TOOL_CALL_TEXT)
 
-    # Replace ollama.generate with our fake function
-    monkeypatch.setattr(ollama, "generate", fake_generate)
+    monkeypatch.setattr("langgraph_base_ros.ollama_utils.generate", fake_generate)
     state_msg = Message(role="user", content="Previous message")
     state = Messages(messages=[state_msg])
     result = await ollama_fixture.invoke(state=state)
@@ -164,8 +164,7 @@ async def test_invoke_no_state_mocked_generate(monkeypatch, ollama_fixture):
     def fake_generate(**kwargs):
         return GenerateResponse(response=TOOL_CALL_TEXT)
 
-    # Replace ollama.generate with our fake function
-    monkeypatch.setattr(ollama, "generate", fake_generate)
+    monkeypatch.setattr("langgraph_base_ros.ollama_utils.generate", fake_generate)
 
     with pytest.raises(ValueError):
         await ollama_fixture.invoke()
