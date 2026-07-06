@@ -27,7 +27,7 @@ setup(
         'test': [
             'pytest',
             'pytest-mock',
-            'pytest-asyncio',
+            'pytest-asyncio<0.24',
         ],
     },
     # entry_points={
