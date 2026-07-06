@@ -5,7 +5,7 @@
   <version>0.0.0</version>
   <description>ROS2 langgraph base classes for heterogeneous use cases implementation</description>
   <maintainer email="opfernandez@uma.es">oscar</maintainer>
-  <license>TODO: License declaration</license>
+  <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
   <depend>llm_interactions_msgs</depend>
