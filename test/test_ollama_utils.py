@@ -193,14 +193,14 @@ async def test_invoke_does_not_block_event_loop(monkeypatch):
         nonlocal call_count
         call_count += 1
         time.sleep(0.2)
-        return ChatResponse(message=Message(role="assistant", content="done"))
+        return ChatResponse(message=Message(role='assistant', content='done'))
 
-    monkeypatch.setattr("langgraph_base_ros.ollama_utils.chat", slow_chat)
+    monkeypatch.setattr('langgraph_base_ros.ollama_utils.chat', slow_chat)
 
     async def run_one():
         agent = Ollama(raw=False)
-        agent.state["messages"].append(
-            agent.create_message(role="user", content="hi"))
+        agent.state['messages'].append(
+            agent.create_message(role='user', content='hi'))
         return await agent.invoke()
 
     start = time.perf_counter()
