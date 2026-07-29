@@ -1,5 +1,7 @@
 
 # tests/test_ollama.py
+import asyncio
+import time
 import pytest
 import json
 from langgraph_base_ros.ollama_utils import (
@@ -168,3 +170,44 @@ async def test_invoke_no_state_mocked_generate(monkeypatch, ollama_fixture):
 
     with pytest.raises(ValueError):
         await ollama_fixture.invoke()
+
+# --------------------------------------------------
+# TEST 6: invoke() must not block the event loop
+# --------------------------------------------------
+@pytest.mark.asyncio
+async def test_invoke_does_not_block_event_loop(monkeypatch):
+    """
+    invoke() must yield control to the event loop during LLM inference.
+
+    ollama.chat()/generate() are synchronous and blocking. If invoke() called
+    them directly instead of via asyncio.to_thread, concurrent invoke() calls
+    would run one after another on the single event loop thread, and neither
+    asyncio.wait_for() timeouts nor Task.cancel() could take effect until the
+    call returned on its own. Run several invoke() calls concurrently, backed
+    by a chat() that sleeps synchronously, and assert their total wall time is
+    close to a single call's duration rather than the sum of all of them.
+    """
+    call_count = 0
+
+    def slow_chat(**kwargs):
+        nonlocal call_count
+        call_count += 1
+        time.sleep(0.2)
+        return ChatResponse(message=Message(role="assistant", content="done"))
+
+    monkeypatch.setattr("langgraph_base_ros.ollama_utils.chat", slow_chat)
+
+    async def run_one():
+        agent = Ollama(raw=False)
+        agent.state["messages"].append(
+            agent.create_message(role="user", content="hi"))
+        return await agent.invoke()
+
+    start = time.perf_counter()
+    await asyncio.gather(run_one(), run_one(), run_one())
+    elapsed = time.perf_counter() - start
+
+    assert call_count == 3
+    # Sequential/blocking execution would take >= 0.6s (3 * 0.2s).
+    # Concurrent execution via asyncio.to_thread should take close to 0.2s.
+    assert elapsed < 0.45

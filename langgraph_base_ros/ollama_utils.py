@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 import time
@@ -429,7 +430,14 @@ class Ollama:
                 ))
 
             try:
-                response = generate(
+                # generate() is synchronous and blocking; run it in a worker
+                # thread so this coroutine yields control back to the event
+                # loop for the duration of the inference. Without this, the
+                # loop is blocked for the whole call and neither
+                # asyncio.wait_for() timeouts nor Task.cancel() can take
+                # effect until the request finishes on its own.
+                response = await asyncio.to_thread(
+                    generate,
                     model=self.model,
                     prompt=prompt,
                     stream=False,
@@ -464,7 +472,11 @@ class Ollama:
                     ))
         else:
             try:
-                response = chat(
+                # See the comment on the generate() call above: chat() is
+                # also synchronous and blocking, so it must run off the
+                # event loop for timeouts and cancellation to work.
+                response = await asyncio.to_thread(
+                    chat,
                     model=self.model,
                     stream=False,
                     messages=self.state['messages'],
